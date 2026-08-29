@@ -10,7 +10,7 @@
   <main>
     <header>
       <div class="brand"><span class="brand-mark" aria-hidden="true">ƒ</span><div><h1>FP Draft</h1><p>함수의 문법을 조합하는 카드게임</p></div></div>
-      <div id="connection" class="pill">연결 중</div>
+      <div id="connection" class="pill is-connecting" role="status" aria-live="polite">연결 중</div>
     </header>
 
     <details class="rules-panel">
@@ -26,7 +26,7 @@
     <section id="entry" class="panel">
       <label>이름 <input id="name" maxlength="24" value="Player"></label>
       <div class="actions"><button id="create">방 만들기</button></div>
-      <div class="join"><input id="roomCode" placeholder="room-..."><button id="join">방 참가</button></div>
+      <div class="join"><label class="room-code">방 코드 <input id="roomCode" placeholder="room-..."></label><button id="join">방 참가</button></div>
     </section>
 
     <section id="room" class="hidden">

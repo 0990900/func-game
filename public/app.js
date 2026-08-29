@@ -19,19 +19,24 @@ const operationMeta = {
 
 function connect() {
   clearTimeout(reconnectTimer);
-  $('connection').textContent = '연결 중';
+  setConnection('연결 중', 'is-connecting');
   ws = new WebSocket(wsUrl);
-  ws.addEventListener('open', () => $('connection').textContent = '연결됨');
+  ws.addEventListener('open', () => setConnection('연결됨', 'is-connected'));
   ws.addEventListener('close', () => {
-    $('connection').textContent = '재연결 중';
+    setConnection('재연결 중', 'is-connecting');
     reconnectTimer = setTimeout(connect, 1000);
   });
-  ws.addEventListener('error', () => $('connection').textContent = '연결 오류');
+  ws.addEventListener('error', () => setConnection('연결 오류', 'is-error'));
   ws.addEventListener('message', (e) => {
     const msg = JSON.parse(e.data);
     if (msg.type === 'error') return toast(msg.message);
     if (msg.type === 'state') { state = msg.state; selectedCardId = null; selectedMarketId = null; render(); }
   });
+}
+function setConnection(text, className) {
+  const indicator = $('connection');
+  indicator.textContent = text;
+  indicator.className = `pill ${className}`;
 }
 connect();
 
