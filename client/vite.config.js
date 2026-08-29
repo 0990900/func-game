@@ -9,6 +9,9 @@ export default defineConfig({
   plugins: [react()],
   server: {
     fs: { allow: [repoRoot] },
+    // Dev only, and this server is meant to be reachable from a phone or
+    // another machine on the LAN — by hostname, Tailscale name or IP.
+    allowedHosts: true,
   },
   build: {
     outDir: 'dist',

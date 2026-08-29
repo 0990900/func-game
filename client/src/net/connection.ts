@@ -6,11 +6,19 @@ import { Client } from '@colyseus/sdk';
 import type { Room } from '@colyseus/sdk';
 import type { PublicState } from '../../../src/core/types.ts';
 
+const DEV_SERVER_PORT = 2567;
+
+/** Where the game server is. */
 const endpoint = (): string => {
   const configured = import.meta.env['VITE_COLYSEUS_URL'];
   if (typeof configured === 'string' && configured) return configured;
-  if (import.meta.env.DEV) return 'ws://localhost:2567';
+
   const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  // In dev the game server is a second process on its own port. Reuse the
+  // hostname the page was opened with — hardcoding localhost breaks the moment
+  // the page is opened by hostname, LAN address or from a phone.
+  if (import.meta.env.DEV) return `${protocol}//${location.hostname}:${DEV_SERVER_PORT}`;
+  // In production one server serves both the page and the game.
   return `${protocol}//${location.host}`;
 };
 

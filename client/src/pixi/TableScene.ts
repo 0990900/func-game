@@ -8,10 +8,13 @@
  */
 import { Application, Container, Graphics, Text, TilingSprite } from 'pixi.js';
 import { CARD_HEIGHT, CARD_WIDTH, CardSprite, cardColor } from './CardSprite.ts';
+import { EffectLayer } from './effects.ts';
+import { dealIn, killTweens, moveTo, pulse } from './motion.ts';
+import type { Point } from './motion.ts';
 import type { TableTextures } from './assets.ts';
 import { cardFace, statusName } from '../theme/meta.ts';
 import { palette, toHexNumber } from '../theme/tokens.ts';
-import type { Card, PublicState } from '../../../src/core/types.ts';
+import type { Card, PublicState, Reveal } from '../../../src/core/types.ts';
 
 const GAP = 12;
 const PAD = 16;
@@ -61,6 +64,13 @@ export class TableScene {
 
   private readonly textures: TableTextures;
   private readonly callbacks: TableCallbacks;
+  private readonly effects: EffectLayer;
+  /** Where each card was last drawn, so a move can be tweened from it. */
+  private readonly lastSeen = new Map<string, Point>();
+  /** Where each player's chips start, so a flight has a destination. */
+  private readonly seatAnchor = new Map<string, Point>();
+  private lastRevealId: string | null = null;
+  private lastCurrentPlayerId: string | null = null;
 
   constructor(app: Application, textures: TableTextures, callbacks: TableCallbacks, width: number) {
     this.textures = textures;
@@ -71,6 +81,8 @@ export class TableScene {
       : new Graphics();
     this.root.addChild(this.background, this.handLayer, this.marketLayer, this.areaLayer);
     app.stage.addChild(this.root);
+    // Added last so a card in flight draws above the table, not under it.
+    this.effects = new EffectLayer(app.stage, textures.particles);
   }
 
   resize(width: number): void {
@@ -79,8 +91,11 @@ export class TableScene {
   }
 
   destroy(): void {
+    for (const sprite of this.sprites.values()) killTweens(sprite);
+    this.effects.destroy();
     this.root.destroy({ children: true });
     this.sprites.clear();
+    this.lastSeen.clear();
   }
 
   /** Rebuilds layout from state, reusing every sprite whose card is still on the table. */
@@ -114,10 +129,16 @@ export class TableScene {
 
     y = this.layoutPlayAreas(state, y + GAP);
 
+    // A card that left the hand or market is now a chip; fly the old sprite to
+    // its new home before the chip takes over.
+    this.flyReveal(state);
+
     for (const [id, sprite] of this.sprites) {
       if (seen.has(id)) continue;
+      killTweens(sprite);
       sprite.destroy();
       this.sprites.delete(id);
+      this.lastSeen.delete(id);
     }
 
     const height = y + PAD;
@@ -163,17 +184,29 @@ export class TableScene {
     const perRow = Math.max(1, Math.floor((this.width - PAD * 2 + GAP) / (CARD_WIDTH + GAP)));
 
     cards.forEach((card, index) => {
+      const existed = this.sprites.has(card.id);
       const sprite = this.spriteFor(card, onTap);
       seen.add(card.id);
       sprite.setSelected(card.id === selectedId);
       sprite.setEnabled(enabled);
+
       const column = index % perRow;
       const row = Math.floor(index / perRow);
-      sprite.position.set(
-        PAD + column * (CARD_WIDTH + GAP),
-        top + row * (CARD_HEIGHT + GAP) - (sprite.isSelected() ? 5 : 0),
-      );
+      const target: Point = {
+        x: PAD + column * (CARD_WIDTH + GAP),
+        // A selected card lifts, the way the DOM card did.
+        y: top + row * (CARD_HEIGHT + GAP) - (sprite.isSelected() ? 5 : 0),
+      };
       layer.addChild(sprite);
+
+      if (!existed) {
+        sprite.position.set(target.x, target.y);
+        dealIn(sprite, index);
+      } else if (sprite.x !== target.x || sprite.y !== target.y) {
+        // Reused sprite: tween from where it already is rather than jumping.
+        moveTo(sprite, target);
+      }
+      this.lastSeen.set(card.id, { ...target });
     });
 
     const rows = Math.max(1, Math.ceil(cards.length / perRow));
@@ -200,7 +233,11 @@ export class TableScene {
       );
       name.position.set(PAD, y);
       this.areaLayer.addChild(name);
+      if (isCurrent && state.currentPlayerId !== this.lastCurrentPlayerId) pulse(name);
       y += 20;
+
+      // Where a card flying to this player should land.
+      this.seatAnchor.set(player.id, { x: PAD + 40, y: y + 12 });
 
       if (player.playArea.length === 0) {
         const empty = body('아직 없음', 12, MUTED);
@@ -212,7 +249,40 @@ export class TableScene {
       }
       y += GAP;
     }
+    this.lastCurrentPlayerId = state.currentPlayerId;
     return y;
+  }
+
+  /**
+   * Animates the card the server just revealed, from wherever it last sat to
+   * the seat that played it. `lastReveal` has been in publicState all along;
+   * this is its first use.
+   */
+  private flyReveal(state: PublicState): void {
+    const reveal: Reveal | undefined = state.lastReveal[0];
+    if (!reveal) return;
+
+    // One flight per reveal — publicState resends the same one on every
+    // broadcast, including those a bot timer triggers.
+    const revealId = `${reveal.playerId}:${reveal.card.id}`;
+    if (revealId === this.lastRevealId) return;
+    this.lastRevealId = revealId;
+
+    const destination = this.seatAnchor.get(reveal.playerId);
+    if (!destination) return;
+
+    const emblemKey = reveal.card.kind.includes('wildcard') ? 'wildcard' : reveal.card.container;
+    this.effects.flyCard(
+      reveal.card,
+      // A card played from a hidden hand has no last-known seat: drop it in.
+      this.lastSeen.get(reveal.card.id) ?? { x: this.width / 2 - CARD_WIDTH / 2, y: -CARD_HEIGHT },
+      { x: destination.x - CARD_WIDTH / 4, y: destination.y - CARD_HEIGHT / 4 },
+      this.textures.emblems[emblemKey as 'wildcard'],
+    );
+
+    if (state.players.find((player) => player.id === reveal.playerId)?.status === 'claiming') {
+      this.effects.celebrate(destination, cardColor(reveal.card));
+    }
   }
 
   private layoutChips(cards: readonly Card[], startY: number): number {
