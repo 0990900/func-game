@@ -71,6 +71,8 @@ export class TableScene {
   private readonly seatAnchor = new Map<string, Point>();
   private lastRevealId: string | null = null;
   private lastCurrentPlayerId: string | null = null;
+  /** Y of the market row inside the canvas, so the page can scroll to it. */
+  private marketTop = 0;
 
   constructor(app: Application, textures: TableTextures, callbacks: TableCallbacks, width: number) {
     this.textures = textures;
@@ -88,6 +90,11 @@ export class TableScene {
   resize(width: number): void {
     this.width = width;
     if (this.background instanceof TilingSprite) this.background.width = width;
+  }
+
+  /** Where the market row starts, in canvas pixels. */
+  getMarketTop(): number {
+    return this.marketTop;
   }
 
   destroy(): void {
@@ -115,11 +122,12 @@ export class TableScene {
       onTap: this.callbacks.onSelectHand,
     });
 
+    this.marketTop = y + GAP;
     y = this.layoutRow({
       layer: this.marketLayer,
       title: '시장',
       cards: state.market,
-      y: y + GAP,
+      y: this.marketTop,
       seen,
       selectedId: selectedMarketId,
       // Market cards are inert until a hand card is chosen — the two-step pick.

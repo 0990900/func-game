@@ -12,6 +12,18 @@ import { loadTableTextures, waitForFonts } from './assets.ts';
 import { actions, gameStore } from '../store/gameStore.ts';
 import { palette, toHexNumber } from '../theme/tokens.ts';
 
+/**
+ * Brings the market row into view. Only on narrow screens: on a desktop the
+ * whole table is already visible and moving the page would be disorienting.
+ */
+function revealMarket(host: HTMLElement, marketTop: number): void {
+  if (window.innerWidth > 760) return;
+
+  const top = host.getBoundingClientRect().top + window.scrollY + marketTop - 12;
+  const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
+  window.scrollTo({ top, behavior: reduced ? 'auto' : 'smooth' });
+}
+
 export function TableCanvas() {
   const hostRef = useRef<HTMLDivElement>(null);
   const [failed, setFailed] = useState(false);
@@ -59,11 +71,18 @@ export function TableCanvas() {
         onSelectMarket: (card) => actions.selectMarket(card.id),
       }, host.clientWidth || 640);
 
+      let lastSelected: string | null = null;
+
       const draw = (): void => {
         const { state, selectedCardId, selectedMarketId } = gameStore.getState();
         if (!state || !scene || !app) return;
         const height = scene.update({ state, selectedCardId, selectedMarketId });
         app.renderer.resize(host.clientWidth || 640, height);
+
+        // On a narrow screen the market sits far below the hand, so choosing a
+        // card would otherwise leave the next step off-screen.
+        if (selectedCardId && !lastSelected) revealMarket(host, scene.getMarketTop());
+        lastSelected = selectedCardId;
       };
 
       draw();
