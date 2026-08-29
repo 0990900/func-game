@@ -6,15 +6,21 @@
   "scripts": {
     "start": "node src/server/server.js",
     "dev": "node --watch src/server/server.js",
+    "start:colyseus": "node src/server/colyseus.ts",
+    "dev:colyseus": "node --watch src/server/colyseus.ts",
     "test": "node --test",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@colyseus/tools": "^0.18.3",
+    "colyseus": "^0.18.5",
     "effect": "^3.22.1",
+    "express": "^5.2.1",
     "fun-fp-js": "0.2.2",
     "ws": "^8.18.0"
   },
   "devDependencies": {
+    "@colyseus/testing": "^0.18.5",
     "@types/node": "^26.4.0",
     "typescript": "^7.0.2"
   }
