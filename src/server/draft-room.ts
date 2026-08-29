@@ -1,4 +1,4 @@
-import { Either } from 'effect';
+import { Either, Option } from 'effect';
 import { Room, ServerError } from 'colyseus';
 import type { Client, Delayed } from 'colyseus';
 import { Command } from '../core/commands.ts';
@@ -6,7 +6,7 @@ import type { GameCommand } from '../core/commands.ts';
 import { RuleError } from '../core/errors.ts';
 import { publicState } from '../core/public-state.ts';
 import { createRoomRuntime } from './game-runtime.ts';
-import type { RoomRuntime } from './game-runtime.ts';
+import type { CommandResult, RoomRuntime } from './game-runtime.ts';
 
 /** Seconds a dropped player keeps their seat before it is released. */
 export const RECONNECT_WINDOW = 120;
@@ -52,13 +52,13 @@ export class DraftRoom extends Room {
     this.onMessage('finish_claim', (client) => this.dispatch(client, Command.finishClaim));
   }
 
-  override onJoin(client: Client, options: JoinOptions): void {
+  override async onJoin(client: Client, options: JoinOptions): Promise<void> {
     // The room is created with its host already seated, so the first client to
     // arrive is the creator and takes that seat; everyone else joins the game.
     if (this.seats.size === 0) {
       this.seats.set(client.sessionId, this.runtime.state().hostPlayerId);
     } else {
-      const result = this.runtime.tryRun(Command.joinRoom(options?.name ?? 'Player'));
+      const result = await this.runtime.tryRun(Command.joinRoom(options?.name ?? 'Player'));
       if (Either.isLeft(result)) throw new ServerError(400, result.left.message);
       this.seats.set(client.sessionId, result.right!.id);
     }
@@ -70,7 +70,7 @@ export class DraftRoom extends Room {
     const playerId = this.seats.get(client.sessionId);
     if (!playerId) return;
 
-    this.setConnected(playerId, false);
+    await this.setConnected(playerId, false);
     try {
       await this.allowReconnection(client, this.reconnectWindowSeconds);
     } catch {
@@ -78,17 +78,17 @@ export class DraftRoom extends Room {
     }
   }
 
-  override onReconnect(client: Client): void {
+  override async onReconnect(client: Client): Promise<void> {
     const playerId = this.seats.get(client.sessionId);
-    if (playerId) this.setConnected(playerId, true);
+    if (playerId) await this.setConnected(playerId, true);
   }
 
   /** The client is gone for good — either a consented leave or an expired window. */
-  override onLeave(client: Client): void {
+  override async onLeave(client: Client): Promise<void> {
     const playerId = this.seats.get(client.sessionId);
     if (!playerId) return;
     this.seats.delete(client.sessionId);
-    this.setConnected(playerId, false);
+    await this.setConnected(playerId, false);
   }
 
   override onDispose(): void {
@@ -96,16 +96,16 @@ export class DraftRoom extends Room {
     this.botTimer = null;
   }
 
-  private dispatch(client: Client, build: (playerId: string) => GameCommand): void {
+  private async dispatch(client: Client, build: (playerId: string) => GameCommand): Promise<void> {
     const playerId = this.seats.get(client.sessionId);
     if (!playerId) {
       client.send('error', { message: '플레이어를 찾을 수 없습니다.' });
       return;
     }
 
-    let result;
+    let result: CommandResult;
     try {
-      result = this.runtime.tryRun(build(playerId));
+      result = await this.runtime.tryRun(build(playerId));
     } catch (cause) {
       // A malformed payload can fail before the rules ever see it.
       client.send('error', { message: cause instanceof Error ? cause.message : String(cause) });
@@ -119,8 +119,8 @@ export class DraftRoom extends Room {
     this.broadcastState();
   }
 
-  private setConnected(playerId: string, connected: boolean): void {
-    const result = this.runtime.tryRun(Command.setConnection(playerId, connected));
+  private async setConnected(playerId: string, connected: boolean): Promise<void> {
+    const result = await this.runtime.tryRun(Command.setConnection(playerId, connected));
     if (Either.isLeft(result)) return;
     this.broadcastState();
   }
@@ -149,17 +149,26 @@ export class DraftRoom extends Room {
       this.botTimer = null;
 
       // The game may have moved on during the delay — a human claim resolving,
-      // the round ending, or this seat no longer being the one to act.
-      const current = this.runtime.state();
-      if (current.phase !== 'draft' || current.pendingClaim) return;
-      if (current.players[current.currentPlayerIndex]?.id !== playerId) return;
-
-      const result = this.runtime.tryRun(Command.botTurn(playerId));
-      if (Either.isLeft(result)) {
-        console.error(`bot turn failed in room ${this.roomId}:`, result.left.message);
-        return;
-      }
-      this.broadcastState();
+      // the round ending, or this seat no longer being the one to act. The
+      // re-check runs inside the command's critical section, so nothing can
+      // slip in between deciding and acting.
+      void this.runtime
+        .runWith((current) => {
+          if (current.phase !== 'draft' || current.pendingClaim) return null;
+          if (current.players[current.currentPlayerIndex]?.id !== playerId) return null;
+          return Command.botTurn(playerId);
+        })
+        .then((outcome) => {
+          if (Option.isNone(outcome)) return; // the turn moved on; nothing to do
+          if (Either.isLeft(outcome.value)) {
+            console.error(`bot turn failed in room ${this.roomId}:`, outcome.value.left.message);
+            return;
+          }
+          this.broadcastState();
+        })
+        .catch((cause: unknown) => {
+          console.error(`bot turn crashed in room ${this.roomId}:`, cause);
+        });
     }, delay);
   }
 }
