@@ -98,7 +98,6 @@ function maybeBeginDraft(room) {
     room.phase = 'draft';
     dealRound(room);
     addEvent(room, 'round_start', 'Round 1이 시작됐습니다. 손패는 왼쪽으로 전달됩니다.');
-    advanceBots(room);
   }
 }
 
@@ -133,20 +132,19 @@ export function submitPick(room, playerId, cardId, marketCardId = null) {
   } else advanceTurn(room);
 }
 
-function advanceBots(room) {
-  while (room.phase === 'draft') {
-    const p = room.players[room.currentPlayerIndex];
-    if (!p?.bot) return;
-    if (!p.hand.length) return;
-    const card = [...p.hand].sort((a, b) => botValue(b, p) - botValue(a, p))[0];
-    const before = new Set(findCombos(p.playArea).map(comboKey));
-    resolveTurn(room, p, card, null);
-    findCombos(p.playArea)
-      .map(comboKey)
-      .filter((key) => !before.has(key) && !room.claimedCombos.includes(key))
-      .forEach((key) => awardClaim(room, p, key));
-    advanceTurn(room, false);
-  }
+export function playBotTurn(room, playerId) {
+  if (room.phase !== 'draft' || room.pendingClaim) throw new Error('지금은 봇이 행동할 수 없습니다.');
+  const player = room.players[room.currentPlayerIndex];
+  if (!player?.bot || player.id !== playerId) throw new Error('현재 봇의 턴이 아닙니다.');
+  if (!player.hand.length) throw new Error('봇의 손패가 비어 있습니다.');
+  const card = [...player.hand].sort((a, b) => botValue(b, player) - botValue(a, player))[0];
+  const before = new Set(findCombos(player.playArea).map(comboKey));
+  resolveTurn(room, player, card, null);
+  findCombos(player.playArea)
+    .map(comboKey)
+    .filter((key) => !before.has(key) && !room.claimedCombos.includes(key))
+    .forEach((key) => awardClaim(room, player, key));
+  advanceTurn(room);
 }
 
 function botValue(card, player) {
@@ -179,7 +177,7 @@ function resolveTurn(room, player, selected, marketCard = null) {
   addEvent(room, marketCard ? 'market' : 'pick', message, player.id);
 }
 
-function advanceTurn(room, runBots = true) {
+function advanceTurn(room) {
   room.pendingClaim = null;
   room.turnsThisPick += 1;
 
@@ -203,8 +201,6 @@ function advanceTurn(room, runBots = true) {
       addEvent(room, 'pass', `모든 플레이어가 행동했습니다. 손패를 ${room.direction === 'left' ? '왼쪽' : '오른쪽'}으로 전달합니다.`);
     }
   } else room.currentPlayerIndex = (room.currentPlayerIndex + 1) % room.players.length;
-
-  if (runBots) advanceBots(room);
 }
 
 function rotateHands(room) {
@@ -340,7 +336,8 @@ function playerStatus(room, player) {
   if (room.phase === 'goal') return player.goal ? 'ready' : 'choosing_goal';
   if (room.phase === 'draft') {
     if (room.pendingClaim?.playerId === player.id) return 'claiming';
-    return room.players[room.currentPlayerIndex]?.id === player.id ? 'playing' : 'waiting';
+    if (room.players[room.currentPlayerIndex]?.id === player.id) return player.bot ? 'thinking' : 'playing';
+    return 'waiting';
   }
   if (room.phase === 'finished') return 'finished';
   return 'lobby';

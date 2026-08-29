@@ -131,7 +131,7 @@ function coveredOperations(cards,container,requirements){
   return covered;
 }
 function chips(cards){return cards.length?cards.map(c=>`<span class="chip card--${cardTheme(c)}"><b>${esc(cardMeta(c).containerSymbol)}</b>${esc(c.label)}</span>`).join(''):'<span class="empty-state"><b>첫 카드를 기다리는 중</b><span>손패에서 한 장을 선택하면 여기에 놓입니다.</span></span>';}
-function statusName(status){return ({playing:'플레이 중',claiming:'Claim 선택',waiting:'대기 중',choosing_goal:'목표 선택 중',ready:'선택 완료',disconnected:'연결 끊김',finished:'종료',lobby:'대기실'})[status]||status;}
+function statusName(status){return ({playing:'플레이 중',thinking:'생각 중…',claiming:'Claim 선택',waiting:'대기 중',choosing_goal:'목표 선택 중',ready:'선택 완료',disconnected:'연결 끊김',finished:'종료',lobby:'대기실'})[status]||status;}
 function eventIcon(type){return ({pick:'↦',market:'⇄',claim:'★',claim_ready:'☆',pass:'➜',round_start:'◆',game_start:'◇',game_end:'■',turn_order:'①',join:'+',disconnect:'!',reconnect:'↻',goal_ready:'✓'})[type]||'·';}
 function scoreBreakdown(score){return `조합 ${score.comboScore} · Utility ${score.utilityScore} · Claim ${score.claimScore} · 비밀 목표 제외`;}
 function announceMyTurn(){

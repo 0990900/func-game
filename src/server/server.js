@@ -12,6 +12,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.resolve(__dirname, '../../public');
 const port = Number(process.env.PORT || 3107);
 const clients = new Map();
+const botTimers = new Map();
 
 const contentTypes = { '.html':'text/html; charset=utf-8', '.js':'text/javascript; charset=utf-8', '.css':'text/css; charset=utf-8' };
 const server = http.createServer((req, res) => {
@@ -89,6 +90,26 @@ function broadcastRoom(room) {
   for (const [ws, ctx] of clients.entries()) {
     if (ctx.roomId === room.id) send(ws, 'state', { state: publicState(room, ctx.playerId) });
   }
+  scheduleBot(room);
+}
+
+function scheduleBot(room) {
+  const player = room.phase === 'draft' && !room.pendingClaim ? room.players[room.currentPlayerIndex] : null;
+  if (!player?.bot || botTimers.has(room.id)) return;
+  const delay = 450 + Math.floor(Math.random() * 401);
+  const timer = setTimeout(async () => {
+    botTimers.delete(room.id);
+    const actor = gameStore.actor(room.id);
+    const current = actor?.getState();
+    if (!actor || current.phase !== 'draft' || current.pendingClaim || current.players[current.currentPlayerIndex]?.id !== player.id) return;
+    try {
+      await sendToActor(actor, Game.botTurn(player.id));
+      broadcastRoom(actor.getState());
+    } catch (error) {
+      console.error('Bot turn failed:', error);
+    }
+  }, delay);
+  botTimers.set(room.id, timer);
 }
 
 server.listen(port, '0.0.0.0', () => console.log(`FP Draft Game: http://localhost:${port}`));

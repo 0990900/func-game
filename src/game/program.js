@@ -4,6 +4,7 @@ import {
   claimCombo,
   finishClaim,
   joinRoom,
+  playBotTurn,
   setPlayerConnection,
   startGame,
   submitPick,
@@ -16,6 +17,7 @@ export const Game = Free.api(
   'pick',
   'claim',
   'finishClaim',
+  'botTurn',
   'setConnection',
 );
 
@@ -35,5 +37,6 @@ export const gameInterpreter = Free.interpreter(Game, {
   pick: (playerId, cardId, marketCardId) => transition((room) => submitPick(room, playerId, cardId, marketCardId)),
   claim: (playerId, container, name) => transition((room) => claimCombo(room, playerId, container, name)),
   finishClaim: (playerId) => transition((room) => finishClaim(room, playerId)),
+  botTurn: (playerId) => transition((room) => playBotTurn(room, playerId)),
   setConnection: (playerId, connected) => transition((room) => setPlayerConnection(room, playerId, connected)),
 });

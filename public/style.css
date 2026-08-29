@@ -60,6 +60,7 @@ button.secondary { background:transparent; color:var(--text); } button:disabled 
 .turn-player>b { grid-row:1/3; display:grid; place-items:center; width:26px; height:26px; border:1px solid #526170; border-radius:50%; }
 .turn-player>small { color:var(--muted); font-size:12px; }
 .turn-player.status-playing { border-color:var(--accent); background:#29230f; box-shadow:0 0 0 2px rgba(244,201,93,.12); }
+.turn-player.status-thinking { border-color:var(--task); background:#14282e; box-shadow:0 0 0 2px rgba(91,201,218,.12); }
 .turn-player.status-claiming { border-color:var(--maybe); background:#24182f; }
 .turn-player.status-playing>b { background:var(--accent); color:var(--accent-dark); }
 .turn-player.status-disconnected { border-color:#74343a; opacity:.72; }
@@ -84,6 +85,7 @@ button.secondary { background:transparent; color:var(--text); } button:disabled 
 .score-pill { padding:4px 8px; border:1px solid #526170; background:#0d141c; color:var(--text); font-size:12px; font-weight:900; font-variant-numeric:tabular-nums; white-space:nowrap; }
 .status-badge { padding:3px 7px; border:1px solid var(--line); color:var(--muted); font-size:12px; font-weight:800; }
 .status-badge.status-playing { border-color:#665725; color:var(--accent); }
+.status-badge.status-thinking { border-color:var(--task); color:var(--task); }
 .status-badge.status-claiming { border-color:var(--maybe); color:var(--maybe); }
 .status-badge.status-disconnected { border-color:#74343a; color:#ff9da6; }
 .goal { min-height:116px; text-align:left; background:var(--surface-2); color:var(--text); padding:var(--space-4); border-color:#526479; }.goal strong { display:block; margin-bottom:var(--space-2); color:var(--accent); }

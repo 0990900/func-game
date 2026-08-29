@@ -37,3 +37,20 @@ test('failed Actor command preserves state and does not block its queue', async 
   assert.equal(actor.getState().players.length, 2);
   assert.equal(room.players.length, 1);
 });
+
+test('bot command performs exactly one turn and rejects a stale player', async () => {
+  const actor = createRoomActor(createRoom('A'));
+  const bot = await sendToActor(actor, Game.joinRoom('Bot'));
+  const room = actor.getState();
+  bot.bot = true;
+  room.players[1].bot = true;
+  room.phase = 'draft';
+  room.currentPlayerIndex = 1;
+  room.players[1].hand = [{ id: 'bot-map', kind: 'container-function', container: 'Maybe', operation: 'map', label: 'Maybe.map' }];
+
+  await assert.rejects(sendToActor(actor, Game.botTurn('stale')), /현재 봇의 턴/);
+  await sendToActor(actor, Game.botTurn(bot.id));
+
+  assert.equal(actor.getState().players[1].playArea.length, 1);
+  assert.equal(actor.getState().currentPlayerIndex, 0);
+});
