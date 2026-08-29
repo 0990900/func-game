@@ -204,3 +204,24 @@ main.my-turn .statusbar { box-shadow: 0 0 0 2px rgba(244, 201, 93, .2), 0 8px 24
     animation-duration: .01ms !important;
   }
 }
+
+/* Pixi table -------------------------------------------------------------- */
+.table-panel { padding: 0; overflow: hidden; }
+/* The canvas fills its column and never widens the document. */
+.table-canvas { width: 100%; min-width: 0; line-height: 0; }
+.table-canvas canvas { max-width: 100%; }
+
+/* A keyboard path to the hand: the canvas is not focusable, so the same
+   selection is available as real buttons. Visible only to keyboard users. */
+.sr-hand { display: flex; flex-wrap: wrap; gap: 6px; padding: var(--space-3); }
+.sr-card {
+  min-height: 32px; padding: 0 10px; font-size: 12px; font-weight: 700;
+  background: transparent; color: var(--muted); border: 1px solid var(--line);
+  opacity: 0; position: absolute; pointer-events: none;
+}
+.sr-card:focus-visible { opacity: 1; position: static; pointer-events: auto; color: var(--text); }
+.sr-hand:focus-within .sr-card { opacity: 1; position: static; pointer-events: auto; }
+.visually-hidden {
+  position: absolute; width: 1px; height: 1px; margin: -1px;
+  padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap;
+}

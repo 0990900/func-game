@@ -1,36 +1,12 @@
 /**
- * The table: hand, market, play areas and turn track.
- *
- * This is the seam that becomes the Pixi canvas in milestone D. It is kept
- * free of chrome — no score panel, no event log, no dialogs — so swapping the
- * renderer is a local change. It reads only `PublicState` and the local
- * selection, and speaks only through store actions.
+ * The table. Cards, market and play areas are drawn by Pixi (TableCanvas);
+ * the turn track and the pick confirmation stay DOM because they are text and
+ * controls — screen readers and keyboard users need them.
  */
-import { Card } from './Card.tsx';
-import { cardFace, cardTheme, statusName } from '../theme/meta.ts';
+import { TableCanvas } from '../pixi/TableCanvas.tsx';
+import { statusName } from '../theme/meta.ts';
 import { actions, useGame } from '../store/gameStore.ts';
-import type { Card as CardModel, PublicPlayer, PublicState } from '../../../src/core/types.ts';
-
-function Chips({ cards }: { readonly cards: readonly CardModel[] }) {
-  if (cards.length === 0) {
-    return (
-      <span className="empty-state">
-        <b>첫 카드를 기다리는 중</b>
-        <span>손패에서 한 장을 선택하면 여기에 놓입니다.</span>
-      </span>
-    );
-  }
-  return (
-    <>
-      {cards.map((card) => (
-        <span key={card.id} className={`chip card--${cardTheme(card)}`}>
-          <b>{cardFace(card).containerSymbol}</b>
-          {card.label}
-        </span>
-      ))}
-    </>
-  );
-}
+import type { PublicState } from '../../../src/core/types.ts';
 
 function TurnTrack({ state }: { readonly state: PublicState }) {
   const byId = new Map(state.players.map((player) => [player.id, player]));
@@ -54,18 +30,26 @@ function TurnTrack({ state }: { readonly state: PublicState }) {
   );
 }
 
-function OpponentArea({ player }: { readonly player: PublicPlayer }) {
+/** A keyboard- and screen-reader-accessible mirror of the canvas hand. */
+function HandFallback({ state }: { readonly state: PublicState }) {
+  const selectedCardId = useGame((s) => s.selectedCardId);
+  const myTurn = Boolean(state.me?.isMyTurn);
+
   return (
-    <div className="opponent">
-      <div className="opponent-head">
-        <b>{player.name}</b>
-        {player.bot && <span className="pill">Bot</span>}
-        <span className="pill">{statusName(player.status)}</span>
-        <span className="score-pill">{player.publicScore.total}점</span>
-      </div>
-      <div className="chips">
-        <Chips cards={player.playArea} />
-      </div>
+    <div className="sr-hand">
+      <h3 className="visually-hidden">내 손패 (키보드 선택)</h3>
+      {(state.me?.hand ?? []).map((card) => (
+        <button
+          key={card.id}
+          type="button"
+          className="sr-card"
+          disabled={!myTurn}
+          aria-pressed={card.id === selectedCardId}
+          onClick={() => actions.selectCard(card.id)}
+        >
+          {card.label}
+        </button>
+      ))}
     </div>
   );
 }
@@ -73,11 +57,7 @@ function OpponentArea({ player }: { readonly player: PublicPlayer }) {
 export function GameTable({ state }: { readonly state: PublicState }) {
   const selectedCardId = useGame((s) => s.selectedCardId);
   const selectedMarketId = useGame((s) => s.selectedMarketId);
-
-  const me = state.me;
-  const myTurn = Boolean(me?.isMyTurn);
-  const mySeat = state.players.find((player) => player.id === me?.id);
-  const opponents = state.players.filter((player) => player.id !== me?.id);
+  const myTurn = Boolean(state.me?.isMyTurn);
 
   return (
     <>
@@ -94,37 +74,9 @@ export function GameTable({ state }: { readonly state: PublicState }) {
         </div>
       </div>
 
-      <section className="panel">
-        <h2>내 손패</h2>
-        <div className="cards grid">
-          {(me?.hand ?? []).map((card) => (
-            <Card
-              key={card.id}
-              card={card}
-              selected={card.id === selectedCardId}
-              disabled={!myTurn}
-              onClick={(picked) => actions.selectCard(picked.id)}
-            />
-          ))}
-        </div>
-      </section>
-
-      <section className="panel">
-        <h2>시장</h2>
-        <p className="muted">
-          손패에서 한 장을 고른 뒤 시장 카드를 선택하면 교환합니다. 교환도 한 턴을 씁니다.
-        </p>
-        <div className="cards grid">
-          {state.market.map((card) => (
-            <Card
-              key={card.id}
-              card={card}
-              selected={card.id === selectedMarketId}
-              disabled={!myTurn || !selectedCardId}
-              onClick={(picked) => actions.selectMarket(picked.id)}
-            />
-          ))}
-        </div>
+      <section className="panel table-panel">
+        <TableCanvas />
+        <HandFallback state={state} />
       </section>
 
       {myTurn && selectedCardId && (
@@ -140,18 +92,6 @@ export function GameTable({ state }: { readonly state: PublicState }) {
           </div>
         </section>
       )}
-
-      <section className="panel">
-        <h2>내 플레이 영역</h2>
-        <div className="chips">
-          <Chips cards={mySeat?.playArea ?? []} />
-        </div>
-      </section>
-
-      <section className="panel">
-        <h2>상대 플레이 영역</h2>
-        {opponents.map((player) => <OpponentArea key={player.id} player={player} />)}
-      </section>
     </>
   );
 }
