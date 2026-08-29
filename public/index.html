@@ -36,7 +36,7 @@
       <section id="game" class="hidden">
         <section class="turn-board" aria-live="polite">
           <div><span class="eyebrow">TURN ORDER</span><div id="turnTrack" class="turn-track"></div></div>
-          <div><span class="eyebrow">ROUND PROGRESS</span><div id="roundTrack" class="round-track"></div></div>
+          <div><span class="eyebrow">ROUND PROGRESS</span><div id="roundTrack" class="round-track"></div><small id="progressSummary" class="progress-summary"></small></div>
         </section>
         <div class="columns">
           <div>
@@ -45,7 +45,7 @@
             <section id="confirmPanel" class="panel hidden"><h2>선택 확인</h2><div id="confirmText"></div><div class="actions"><button id="submitPick">이대로 제출</button><button id="clearPick" class="secondary">다시 선택</button></div></section>
           </div>
           <div>
-            <section class="panel play-panel"><h2>내 플레이 영역</h2><div id="comboProgress" class="combo-progress"></div><div id="myArea" class="chips"></div><div id="claims"></div></section>
+            <section class="panel play-panel"><div class="section-heading"><h2>내 플레이 영역</h2><span id="myScore" class="score-pill"></span></div><div id="comboProgress" class="combo-progress"></div><div id="myArea" class="chips"></div><div id="claims"></div></section>
             <section class="panel"><h2>상대 플레이 영역</h2><div id="others"></div></section>
           </div>
         </div>

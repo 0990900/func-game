@@ -66,6 +66,7 @@ button.secondary { background:transparent; color:var(--text); } button:disabled 
 .round-dot { display:grid; place-items:center; width:34px; height:34px; border:1px solid var(--line); color:var(--muted); font-weight:800; }
 .round-dot.done { border-color:#31523f; background:#10271a; color:#8de6ae; }
 .round-dot.current { border-color:var(--accent); background:var(--accent); color:var(--accent-dark); }
+.progress-summary { display:block; margin-top:var(--space-2); color:var(--muted); text-align:right; font-variant-numeric:tabular-nums; }
 .join { justify-content:flex-start; margin-top:var(--space-3); }
 .room-code { display:flex; align-items:center; gap:var(--space-2); font-weight:700; }
 .chips { display:flex; flex-wrap:wrap; gap:var(--space-2); }
@@ -74,6 +75,10 @@ button.secondary { background:transparent; color:var(--text); } button:disabled 
 .player { padding:var(--space-3) 0; border-top:1px solid var(--line); } .player:first-child { border-top:0; }
 .player.is-playing { padding:var(--space-3); border:1px solid #5b4c24; background:#18160f; }
 .player-heading { display:flex; justify-content:space-between; align-items:center; gap:var(--space-2); margin-bottom:var(--space-2); }
+.section-heading { display:flex; justify-content:space-between; align-items:start; gap:var(--space-2); }
+.section-heading h2 { margin-bottom:var(--space-4); }
+.player-meta { display:flex; align-items:center; gap:6px; }
+.score-pill { padding:4px 8px; border:1px solid #526170; background:#0d141c; color:var(--text); font-size:12px; font-weight:900; font-variant-numeric:tabular-nums; white-space:nowrap; }
 .status-badge { padding:3px 7px; border:1px solid var(--line); color:var(--muted); font-size:12px; font-weight:800; }
 .status-badge.status-playing { border-color:#665725; color:var(--accent); }
 .status-badge.status-disconnected { border-color:#74343a; color:#ff9da6; }

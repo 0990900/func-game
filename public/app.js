@@ -63,7 +63,7 @@ function render(){
   if(!state) return;
   document.body.classList.toggle('my-turn', state.me.isMyTurn);
   $('roomId').textContent=`방 ${state.roomId}`;
-  $('phase').textContent=state.phase==='draft' ? `Round ${state.round} · Pick ${state.pick} · ${state.direction==='left'?'← 패스':'→ 패스'}` : phaseName(state.phase);
+  $('phase').textContent=state.phase==='draft' ? `Round ${state.round}/3 · Pick ${state.pick}/5 · ${state.progress.turnsTotal-state.progress.turnsCompleted}턴 남음 · ${state.direction==='left'?'← 패스':'→ 패스'}` : phaseName(state.phase);
   for(const id of ['lobby','goals','game','finished']) $(id).classList.add('hidden');
   if(state.phase==='lobby') renderLobby();
   else if(state.phase==='goal') renderGoals();
@@ -88,14 +88,15 @@ function renderGame(){
   $('pickHelp').textContent=state.me.isMyTurn?'당신의 턴입니다. 한 장을 선택하세요.':`${current?.name||'다른 플레이어'}의 턴입니다.`;
   $('turnTrack').innerHTML=state.players.map((p,index)=>`<span class="turn-player status-${p.status}"><b>${index+1}</b>${esc(p.name)}<small>${statusName(p.status)}</small></span>`).join('<i>→</i>');
   $('roundTrack').innerHTML=Array.from({length:5},(_,index)=>`<span class="round-dot ${index+1<state.pick?'done':index+1===state.pick?'current':''}">${index+1}</span>`).join('');
+  $('progressSummary').textContent=`내 선택 ${state.progress.myPicks}/${state.progress.myPicksTotal} · 전체 ${state.progress.turnsCompleted}/${state.progress.turnsTotal}`;
   renderCards('hand', state.me.hand, c=>{ if(!state.me.isMyTurn)return; selectedCardId=c.id; selectedMarketId=null; renderGame(); }, selectedCardId, false, !state.me.isMyTurn);
   renderCards('market', state.market, c=>{ if(!state.me.isMyTurn||!selectedCardId)return; selectedMarketId=(selectedMarketId===c.id?null:c.id); renderGame(); }, selectedMarketId, true, !state.me.isMyTurn||!selectedCardId);
   $('confirmPanel').classList.toggle('hidden', !selectedCardId || !state.me.isMyTurn);
   const selected=state.me.hand.find(c=>c.id===selectedCardId); const market=state.market.find(c=>c.id===selectedMarketId);
   $('confirmText').textContent=selected ? (market ? `${selected.label} 대신 시장의 ${market.label} 획득` : `${selected.label} 획득`) : '';
-  const mePublic=state.players.find(p=>p.id===state.me.id); $('comboProgress').innerHTML=comboProgress(mePublic.playArea); $('myArea').innerHTML=chips(mePublic.playArea);
+  const mePublic=state.players.find(p=>p.id===state.me.id); $('myScore').textContent=`공개 ${mePublic.publicScore.total}점`; $('myScore').title=scoreBreakdown(mePublic.publicScore); $('comboProgress').innerHTML=comboProgress(mePublic.playArea); $('myArea').innerHTML=chips(mePublic.playArea);
   $('claims').innerHTML=''; state.me.availableClaims.forEach(c=>{const b=document.createElement('button');b.className='secondary';b.textContent=`Claim ${c.container} ${c.name} (+1)`;b.addEventListener('click',()=>send('claim',{container:c.container,name:c.name}));$('claims').appendChild(b);});
-  $('others').innerHTML=state.players.filter(p=>p.id!==state.me.id).map(p=>`<div class="player ${p.status==='playing'?'is-playing':''}"><div class="player-heading"><strong>${esc(p.name)}</strong><span class="status-badge status-${p.status}">${statusName(p.status)}</span></div><div class="chips">${chips(p.playArea)}</div></div>`).join('');
+  $('others').innerHTML=state.players.filter(p=>p.id!==state.me.id).map(p=>`<div class="player ${p.status==='playing'?'is-playing':''}"><div class="player-heading"><strong>${esc(p.name)}</strong><span class="player-meta"><span class="score-pill" title="${esc(scoreBreakdown(p.publicScore))}">공개 ${p.publicScore.total}점</span><span class="status-badge status-${p.status}">${statusName(p.status)}</span></span></div><div class="chips">${chips(p.playArea)}</div></div>`).join('');
   $('events').innerHTML=state.events.length?state.events.map(event=>`<div class="event event-${event.type}"><span aria-hidden="true">${eventIcon(event.type)}</span><p>${esc(event.message)}</p></div>`).join(''):'<div class="empty-state"><b>게임을 준비하고 있습니다.</b><span>플레이어의 행동이 여기에 기록됩니다.</span></div>';
 }
 function renderFinished(){
@@ -131,6 +132,7 @@ function coveredOperations(cards,container,requirements){
 function chips(cards){return cards.length?cards.map(c=>`<span class="chip card--${cardTheme(c)}"><b>${esc(cardMeta(c).containerSymbol)}</b>${esc(c.label)}</span>`).join(''):'<span class="empty-state"><b>첫 카드를 기다리는 중</b><span>손패에서 한 장을 선택하면 여기에 놓입니다.</span></span>';}
 function statusName(status){return ({playing:'플레이 중',waiting:'대기 중',choosing_goal:'목표 선택 중',ready:'선택 완료',disconnected:'연결 끊김',finished:'종료',lobby:'대기실'})[status]||status;}
 function eventIcon(type){return ({pick:'↦',market:'⇄',claim:'★',pass:'➜',round_start:'◆',game_start:'◇',game_end:'■',join:'+',disconnect:'!',reconnect:'↻',goal_ready:'✓'})[type]||'·';}
+function scoreBreakdown(score){return `조합 ${score.comboScore} · Utility ${score.utilityScore} · Claim ${score.claimScore} · 비밀 목표 제외`;}
 function announceMyTurn(){
   document.title='내 턴! · FP Draft';
   toast('내 턴입니다. 손패에서 한 장을 선택하세요.');

@@ -235,6 +235,7 @@ function goalScore(player) {
 
 export function publicState(room, viewerId) {
   const viewer = room.players.find((p) => p.id === viewerId);
+  const turnsCompleted = room.players.reduce((sum, player) => sum + player.playArea.length, 0);
   const scores = room.phase === 'finished'
     ? room.players.map((p) => {
         const base = scorePlayer(p);
@@ -249,6 +250,14 @@ export function publicState(room, viewerId) {
     round: room.round,
     pick: room.pick,
     direction: room.direction,
+    progress: {
+      roundsTotal: 3,
+      picksPerRound: 5,
+      turnsCompleted,
+      turnsTotal: 60,
+      myPicks: viewer?.playArea.length || 0,
+      myPicksTotal: 15,
+    },
     hostPlayerId: room.hostPlayerId,
     me: viewer ? {
       id: viewer.id,
@@ -270,10 +279,21 @@ export function publicState(room, viewerId) {
       claimCount: p.claims.length,
       cardCount: p.playArea.length,
       status: playerStatus(room, p),
+      publicScore: publicScore(p),
     })),
     lastReveal: room.lastReveal,
     events: room.events.slice(-30).reverse(),
     scores,
+  };
+}
+
+function publicScore(player) {
+  const score = scorePlayer(player);
+  return {
+    comboScore: score.comboScore,
+    utilityScore: score.utilityScore,
+    claimScore: score.claimScore,
+    total: score.total,
   };
 }
 

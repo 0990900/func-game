@@ -104,3 +104,22 @@ test('public events and player statuses follow authoritative turns', () => {
   assert.equal(disconnected.players[1].status, 'disconnected');
   assert.equal(disconnected.events[0].type, 'disconnect');
 });
+
+test('live public score excludes secret goal and progress counts all turns', () => {
+  const room = fourPlayerDraft();
+  const a = room.players[0];
+  a.playArea = [{ kind: 'container-function', container: 'Maybe', operation: 'map' }];
+
+  const state = publicState(room, a.id);
+  assert.deepEqual(state.players[0].publicScore, {
+    comboScore: 2,
+    utilityScore: 0,
+    claimScore: 0,
+    total: 2,
+  });
+  assert.equal('goalScore' in state.players[0].publicScore, false);
+  assert.equal(state.progress.turnsCompleted, 1);
+  assert.equal(state.progress.turnsTotal, 60);
+  assert.equal(state.progress.myPicks, 1);
+  assert.equal(state.progress.myPicksTotal, 15);
+});
