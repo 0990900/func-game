@@ -9,9 +9,19 @@
 <body>
   <main>
     <header>
-      <div><h1>FP Draft</h1><p>함수형 프로그래밍 패턴을 모으는 드래프트 게임</p></div>
+      <div class="brand"><span class="brand-mark" aria-hidden="true">ƒ</span><div><h1>FP Draft</h1><p>함수의 문법을 조합하는 카드게임</p></div></div>
       <div id="connection" class="pill">연결 중</div>
     </header>
+
+    <details class="rules-panel">
+      <summary><span aria-hidden="true">?</span> 게임 방법</summary>
+      <div class="rules-grid">
+        <div><strong>1. 카드 선택</strong><span>내 턴에 손패 한 장을 플레이합니다.</span></div>
+        <div><strong>2. 조합 완성</strong><span>같은 계열의 map → ap → pure → chain을 모읍니다.</span></div>
+        <div><strong>3. 점수 획득</strong><span>완성한 최고 조합과 Claim, 비밀 목표로 점수를 얻습니다.</span></div>
+      </div>
+      <p class="legend"><b>↦ map</b><b>⊛ ap</b><b>η pure</b><b>⋙ chain</b><b>◇? Maybe</b><b>◐ Either</b><b>≡ List</b><b>ϟ Task</b></p>
+    </details>
 
     <section id="entry" class="panel">
       <label>이름 <input id="name" maxlength="24" value="Player"></label>
@@ -31,8 +41,8 @@
             <section id="confirmPanel" class="panel hidden"><h2>선택 확인</h2><div id="confirmText"></div><div class="actions"><button id="submitPick">이대로 제출</button><button id="clearPick" class="secondary">다시 선택</button></div></section>
           </div>
           <div>
-            <section class="panel"><h2>내 플레이 영역</h2><div id="myArea" class="chips"></div><div id="claims"></div></section>
-            <section class="panel"><h2>다른 플레이어</h2><div id="others"></div></section>
+            <section class="panel play-panel"><h2>내 플레이 영역</h2><div id="comboProgress" class="combo-progress"></div><div id="myArea" class="chips"></div><div id="claims"></div></section>
+            <section class="panel"><h2>상대 플레이 영역</h2><div id="others"></div></section>
           </div>
         </div>
         <section class="panel"><h2>이번 픽 공개</h2><div id="reveal" class="chips"></div></section>

@@ -5,6 +5,17 @@ let state = null;
 let selectedCardId = null;
 let selectedMarketId = null;
 const $ = (id) => document.getElementById(id);
+const containerMeta = {
+  Maybe: { symbol: '◇?', className: 'maybe' },
+  Either: { symbol: '◐', className: 'either' },
+  List: { symbol: '≡', className: 'list' },
+  Task: { symbol: 'ϟ', className: 'task' },
+};
+const operationMeta = {
+  map: ['↦', '구조를 유지해 변환'], ap: ['⊛', '함수를 구조 안에서 적용'], pure: ['η', '값을 구조에 올리기'],
+  chain: ['⋙', '연산을 순서대로 연결'], alt: ['∨', '실패 시 다른 선택'], zero: ['∅', '빈 선택'],
+  bimap: ['⇄', '양쪽 값을 함께 변환'], reduce: ['Σ', '여러 값을 하나로 접기'], traverse: ['⤨', '효과를 유지해 순회'],
+};
 
 function connect() {
   clearTimeout(reconnectTimer);
@@ -68,7 +79,7 @@ function renderGame(){
   $('confirmPanel').classList.toggle('hidden', !selectedCardId || !state.me.isMyTurn);
   const selected=state.me.hand.find(c=>c.id===selectedCardId); const market=state.market.find(c=>c.id===selectedMarketId);
   $('confirmText').textContent=selected ? (market ? `${selected.label} 대신 시장의 ${market.label} 획득` : `${selected.label} 획득`) : '';
-  const mePublic=state.players.find(p=>p.id===state.me.id); $('myArea').innerHTML=chips(mePublic.playArea);
+  const mePublic=state.players.find(p=>p.id===state.me.id); $('comboProgress').innerHTML=comboProgress(mePublic.playArea); $('myArea').innerHTML=chips(mePublic.playArea);
   $('claims').innerHTML=''; state.me.availableClaims.forEach(c=>{const b=document.createElement('button');b.className='secondary';b.textContent=`Claim ${c.container} ${c.name} (+1)`;b.addEventListener('click',()=>send('claim',{container:c.container,name:c.name}));$('claims').appendChild(b);});
   $('others').innerHTML=state.players.filter(p=>p.id!==state.me.id).map(p=>`<div class="player"><strong>${esc(p.name)}</strong><div class="chips">${chips(p.playArea)}</div></div>`).join('');
   $('reveal').innerHTML=state.lastReveal.length?state.lastReveal.map(r=>`<span class="chip">${esc(r.playerName)} → ${esc(r.card.label)}</span>`).join(''):'<span class="kind">아직 공개된 픽이 없습니다.</span>';
@@ -78,9 +89,31 @@ function renderFinished(){
   $('scores').innerHTML=state.scores.map((s,i)=>`<div class="player"><strong>${i+1}위 · ${esc(s.name)} · ${s.total}점</strong><div class="kind">조합 ${s.comboScore} · Utility ${s.utilityScore} · Claim ${s.claimScore} · 목표 ${s.goalScore}</div></div>`).join('');
 }
 function renderCards(targetId,cards,onClick,selectedId,market=false,disabled=false){
-  const target=$(targetId); target.innerHTML=''; cards.forEach(c=>{const b=document.createElement('button');b.className='card';if(c.id===selectedId)b.classList.add('selected');b.disabled=disabled;b.innerHTML=`<div class="kind">${esc(kind(c))}</div><div class="label">${esc(c.label)}</div>`;b.addEventListener('click',()=>onClick(c));target.appendChild(b);});
+  const target=$(targetId); target.innerHTML=''; cards.forEach(c=>{const b=document.createElement('button');b.className=`card card--${cardTheme(c)}`;if(c.id===selectedId)b.classList.add('selected');b.disabled=disabled;const meta=cardMeta(c);b.innerHTML=`<div class="card-top"><span class="card-sigil">${esc(meta.containerSymbol)}</span><span class="kind">${esc(meta.kindLabel)}</span></div><div class="operation-symbol" aria-hidden="true">${esc(meta.operationSymbol)}</div><div class="label">${esc(meta.operationLabel)}</div><div class="card-hint">${esc(meta.hint)}</div>`;b.addEventListener('click',()=>onClick(c));target.appendChild(b);});
 }
-function kind(c){if(c.kind==='utility')return'UTILITY';if(c.kind.includes('wildcard'))return'JOKER';return c.container||'';}
-function chips(cards){return cards.length?cards.map(c=>`<span class="chip">${esc(c.label)}</span>`).join(''):'<span class="kind">아직 없음</span>';}
+function cardTheme(c){if(c.kind==='utility')return'utility';if(c.kind.includes('wildcard'))return'wildcard';return containerMeta[c.container]?.className||'neutral';}
+function cardMeta(c){
+  if(c.kind==='utility') return {containerSymbol:'λ',kindLabel:'UTILITY',operationSymbol:'ƒ',operationLabel:c.operation,hint:'다양성 점수 카드'};
+  if(c.kind.includes('wildcard')) return {containerSymbol:'✦',kindLabel:'WILDCARD',operationSymbol:c.operation==='*'?'⁕':operationMeta[c.operation]?.[0]||'⁕',operationLabel:c.label,hint:'필요한 자리를 대신합니다'};
+  const op=operationMeta[c.operation]||['·','함수 연산']; const container=containerMeta[c.container];
+  return {containerSymbol:container?.symbol||'ƒ',kindLabel:c.container,operationSymbol:op[0],operationLabel:c.operation,hint:op[1]};
+}
+function comboProgress(cards){
+  const requirements=['map','ap','pure','chain'];
+  return Object.entries(containerMeta).map(([container,meta])=>{
+    const covered=coveredOperations(cards,container,requirements);
+    const steps=requirements.map(op=>`<span class="combo-step ${covered.has(op)?'complete':''}">${operationMeta[op][0]} ${op}</span>`).join('');
+    return `<div class="combo-row"><span class="combo-container card--${meta.className}">${meta.symbol} ${container}</span><div>${steps}</div></div>`;
+  }).join('');
+}
+function coveredOperations(cards,container,requirements){
+  const available=[...cards]; const covered=new Set();
+  for(const op of requirements){
+    const index=available.findIndex(c=>(c.kind==='container-function'&&c.container===container&&c.operation===op)||(c.kind==='operation-wildcard'&&c.operation===op)||(c.kind==='container-wildcard'&&c.container===container)||c.kind==='wildcard');
+    if(index>=0){covered.add(op);available.splice(index,1);}
+  }
+  return covered;
+}
+function chips(cards){return cards.length?cards.map(c=>`<span class="chip card--${cardTheme(c)}"><b>${esc(cardMeta(c).containerSymbol)}</b>${esc(c.label)}</span>`).join(''):'<span class="empty-state"><b>첫 카드를 기다리는 중</b><span>손패에서 한 장을 선택하면 여기에 놓입니다.</span></span>';}
 function esc(v){return String(v).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));}
 function toast(text){const t=$('toast');t.textContent=text;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2500);}
