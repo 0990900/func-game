@@ -1,0 +1,262 @@
+import crypto from 'node:crypto';
+import { createDeck } from './cards.js';
+import { shuffle } from './random.js';
+import { goals } from './goals.js';
+import { findCombos } from './combos.js';
+import { scorePlayer, scoreUtilities } from './scoring.js';
+
+const MAX_PLAYERS = 4;
+
+function id(prefix) { return `${prefix}-${crypto.randomBytes(4).toString('hex')}`; }
+
+export function createRoom(hostName = 'Player') {
+  const host = createPlayer(hostName, false);
+  return {
+    id: id('room'),
+    phase: 'lobby',
+    round: 0,
+    pick: 0,
+    direction: 'left',
+    hostPlayerId: host.id,
+    players: [host],
+    deck: [],
+    market: [],
+    currentPlayerIndex: 0,
+    lastReveal: [],
+    claimedCombos: [],
+  };
+}
+
+export function createPlayer(name, bot = false) {
+  return {
+    id: id(bot ? 'bot' : 'player'),
+    name: name?.trim().slice(0, 24) || 'Player',
+    bot,
+    hand: [],
+    playArea: [],
+    goalOptions: [],
+    goal: null,
+    claims: [],
+    connected: true,
+  };
+}
+
+export function joinRoom(room, name) {
+  if (room.phase !== 'lobby') throw new Error('이미 시작된 게임입니다.');
+  if (room.players.length >= MAX_PLAYERS) throw new Error('방이 가득 찼습니다.');
+  const player = createPlayer(name, false);
+  room.players.push(player);
+  return player;
+}
+
+export function addBotsToFour(room) {
+  let i = 1;
+  while (room.players.length < MAX_PLAYERS) room.players.push(createPlayer(`Bot ${i++}`, true));
+}
+
+export function startGame(room) {
+  if (room.phase !== 'lobby') throw new Error('게임이 이미 시작되었습니다.');
+  if (room.players.length < 2) addBotsToFour(room);
+  else addBotsToFour(room);
+
+  room.deck = shuffle(createDeck());
+  room.market = room.deck.splice(0, 4);
+  room.round = 1;
+  room.pick = 1;
+  room.direction = 'left';
+  room.phase = 'goal';
+  room.lastReveal = [];
+  room.currentPlayerIndex = 0;
+
+  const goalDeck = shuffle(goals);
+  room.players.forEach((p, idx) => {
+    p.goalOptions = [goalDeck[(idx * 2) % goalDeck.length], goalDeck[(idx * 2 + 1) % goalDeck.length]];
+    if (p.bot) p.goal = p.goalOptions[0];
+  });
+}
+
+export function chooseGoal(room, playerId, goalId) {
+  if (room.phase !== 'goal') throw new Error('지금은 목표를 선택할 수 없습니다.');
+  const p = mustPlayer(room, playerId);
+  const goal = p.goalOptions.find((g) => g.id === goalId);
+  if (!goal) throw new Error('선택할 수 없는 목표입니다.');
+  p.goal = goal;
+  maybeBeginDraft(room);
+}
+
+function maybeBeginDraft(room) {
+  if (room.players.every((p) => p.goal)) {
+    room.phase = 'draft';
+    dealRound(room);
+    advanceBots(room);
+  }
+}
+
+function dealRound(room) {
+  room.players.forEach((p) => { p.hand = room.deck.splice(0, 5); });
+  room.currentPlayerIndex = 0;
+}
+
+export function submitPick(room, playerId, cardId, marketCardId = null) {
+  if (room.phase !== 'draft') throw new Error('지금은 카드를 선택할 수 없습니다.');
+  const p = mustPlayer(room, playerId);
+  const current = room.players[room.currentPlayerIndex];
+  if (!current || current.id !== playerId) throw new Error('현재 당신의 턴이 아닙니다.');
+  const card = p.hand.find((c) => c.id === cardId);
+  if (!card) throw new Error('손패에 없는 카드입니다.');
+
+  let market = null;
+  if (marketCardId) {
+    market = room.market.find((c) => c.id === marketCardId);
+    if (!market) throw new Error('시장에 없는 카드입니다.');
+  }
+
+  resolveTurn(room, p, card, market);
+  advanceTurn(room);
+}
+
+function advanceBots(room) {
+  while (room.phase === 'draft') {
+    const p = room.players[room.currentPlayerIndex];
+    if (!p?.bot) return;
+    if (!p.hand.length) return;
+    const card = [...p.hand].sort((a, b) => botValue(b, p) - botValue(a, p))[0];
+    resolveTurn(room, p, card, null);
+    advanceTurn(room, false);
+  }
+}
+
+function botValue(card, player) {
+  if (card.kind === 'wildcard') return 100;
+  if (card.kind.includes('wildcard')) return 25;
+  if (card.kind === 'utility') return 5 + player.playArea.filter((c) => c.kind === 'utility').length * 2;
+  const sameContainer = player.playArea.filter((c) => c.container === card.container).length;
+  const duplicate = player.playArea.some((c) => c.container === card.container && c.operation === card.operation);
+  const rare = ['chain', 'traverse', 'bimap', 'zero'].includes(card.operation) ? 3 : 0;
+  return sameContainer * 3 + (duplicate ? -2 : 4) + rare + Math.random();
+}
+
+function resolveTurn(room, player, selected, marketCard = null) {
+  const handIndex = player.hand.findIndex((c) => c.id === selected.id);
+  player.hand.splice(handIndex, 1);
+  let gained = selected;
+
+  if (marketCard) {
+    const marketIndex = room.market.findIndex((c) => c.id === marketCard.id);
+    if (marketIndex < 0) throw new Error('시장에 없는 카드입니다.');
+    gained = room.market[marketIndex];
+    room.market[marketIndex] = selected;
+  }
+
+  player.playArea.push(gained);
+  room.lastReveal = [{ playerId: player.id, playerName: player.name, card: gained }];
+}
+
+function advanceTurn(room, runBots = true) {
+  room.currentPlayerIndex += 1;
+
+  if (room.currentPlayerIndex >= room.players.length) {
+    if (room.pick >= 5) {
+      if (room.round >= 3) {
+        room.phase = 'finished';
+        room.currentPlayerIndex = 0;
+        return;
+      }
+      room.round += 1;
+      room.pick = 1;
+      room.direction = room.round === 2 ? 'right' : 'left';
+      dealRound(room);
+    } else {
+      rotateHands(room);
+      room.pick += 1;
+      room.currentPlayerIndex = 0;
+    }
+  }
+
+  if (runBots) advanceBots(room);
+}
+
+function rotateHands(room) {
+  const oldHands = room.players.map((p) => p.hand);
+  const n = room.players.length;
+  room.players.forEach((p, i) => {
+    const source = room.direction === 'left' ? (i - 1 + n) % n : (i + 1) % n;
+    p.hand = oldHands[source];
+  });
+}
+
+export function claimCombo(room, playerId, container, name) {
+  const p = mustPlayer(room, playerId);
+  const key = `${container}:${name}`;
+  if (room.claimedCombos.includes(key)) throw new Error('이미 Claim된 조합입니다.');
+  const possible = findCombos(p.playArea).some((c) => c.container === container && c.name === name);
+  if (!possible) throw new Error('아직 완성되지 않은 조합입니다.');
+  room.claimedCombos.push(key);
+  p.claims.push(key);
+}
+
+function goalScore(player) {
+  if (!player.goal) return 0;
+  const combos = findCombos(player.playArea);
+  const exact = (container, op) => player.playArea.some((c) => c.kind === 'container-function' && c.container === container && c.operation === op);
+  const goal = player.goal;
+  let ok = false;
+  if (goal.id === 'specialist') {
+    const count = {};
+    combos.forEach((c) => { count[c.container] = (count[c.container] || 0) + 1; });
+    ok = Object.values(count).some((n) => n >= 2);
+  } else if (goal.id === 'generalist') ok = new Set(combos.map((c) => c.container)).size >= 3;
+  else if (goal.id === 'purist') ok = ['Maybe', 'Either', 'List', 'Task'].some((c) => ['map', 'ap', 'pure', 'chain'].every((op) => exact(c, op)));
+  else if (goal.id === 'utility-belt') ok = scoreUtilities(player.playArea).count >= 5;
+  else if (goal.id === 'polyglot') ok = ['Maybe', 'Either', 'List', 'Task'].every((c) => exact(c, 'map'));
+  else if (goal.id === 'collector') ok = new Set(player.playArea.filter((c) => c.operation).map((c) => c.operation)).size >= 7;
+  return ok ? goal.score : 0;
+}
+
+export function publicState(room, viewerId) {
+  const viewer = room.players.find((p) => p.id === viewerId);
+  const scores = room.phase === 'finished'
+    ? room.players.map((p) => {
+        const base = scorePlayer(p);
+        const goal = goalScore(p);
+        return { playerId: p.id, name: p.name, ...base, goalScore: goal, total: base.total + goal };
+      }).sort((a, b) => b.total - a.total)
+    : null;
+
+  return {
+    roomId: room.id,
+    phase: room.phase,
+    round: room.round,
+    pick: room.pick,
+    direction: room.direction,
+    hostPlayerId: room.hostPlayerId,
+    me: viewer ? {
+      id: viewer.id,
+      name: viewer.name,
+      hand: viewer.hand,
+      goalOptions: room.phase === 'goal' ? viewer.goalOptions : [],
+      goal: viewer.goal,
+      isMyTurn: room.phase === 'draft' && room.players[room.currentPlayerIndex]?.id === viewer.id,
+      availableClaims: findCombos(viewer.playArea).filter((c) => !room.claimedCombos.includes(`${c.container}:${c.name}`)),
+    } : null,
+    currentPlayerId: room.phase === 'draft' ? room.players[room.currentPlayerIndex]?.id || null : null,
+    market: room.market,
+    players: room.players.map((p) => ({
+      id: p.id,
+      name: p.name,
+      bot: p.bot,
+      connected: p.connected,
+      playArea: p.playArea,
+      claimCount: p.claims.length,
+      cardCount: p.playArea.length,
+    })),
+    lastReveal: room.lastReveal,
+    scores,
+  };
+}
+
+function mustPlayer(room, playerId) {
+  const p = room.players.find((x) => x.id === playerId);
+  if (!p) throw new Error('플레이어를 찾을 수 없습니다.');
+  return p;
+}
