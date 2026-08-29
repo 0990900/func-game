@@ -34,6 +34,10 @@
       <section id="lobby" class="panel hidden"><h2>대기실</h2><div id="lobbyPlayers"></div><button id="start">게임 시작</button></section>
       <section id="goals" class="panel hidden"><h2>비밀 목표 선택</h2><p>둘 중 하나를 고르세요.</p><div id="goalCards" class="grid"></div></section>
       <section id="game" class="hidden">
+        <section class="turn-board" aria-live="polite">
+          <div><span class="eyebrow">TURN ORDER</span><div id="turnTrack" class="turn-track"></div></div>
+          <div><span class="eyebrow">ROUND PROGRESS</span><div id="roundTrack" class="round-track"></div></div>
+        </section>
         <div class="columns">
           <div>
             <section class="panel"><h2>내 손패</h2><p id="pickHelp"></p><div id="hand" class="grid cards"></div></section>
@@ -45,7 +49,7 @@
             <section class="panel"><h2>상대 플레이 영역</h2><div id="others"></div></section>
           </div>
         </div>
-        <section class="panel"><h2>이번 픽 공개</h2><div id="reveal" class="chips"></div></section>
+        <section class="panel"><h2>게임 이벤트</h2><div id="events" class="event-log"></div></section>
       </section>
       <section id="finished" class="panel hidden"><h2>게임 종료</h2><div id="scores"></div></section>
     </section>

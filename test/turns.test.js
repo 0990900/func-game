@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createRoom, joinRoom, startGame, chooseGoal, submitPick, publicState } from '../src/game/game.js';
+import { createRoom, joinRoom, startGame, chooseGoal, submitPick, publicState, setPlayerConnection } from '../src/game/game.js';
 
 function fourPlayerDraft() {
   const room = createRoom('A');
@@ -82,4 +82,25 @@ test('viewer state hides opponents hands and secret goals during the game', () =
     assert.equal('goal' in player, false);
     assert.equal('goalOptions' in player, false);
   }
+  assert.equal(JSON.stringify(state.events).includes('Specialist'), false);
+  assert.equal(JSON.stringify(state.events).includes('Utility Belt'), false);
+});
+
+test('public events and player statuses follow authoritative turns', () => {
+  const room = fourPlayerDraft();
+  const [a, b] = room.players;
+
+  assert.equal(publicState(room, a.id).players[0].status, 'playing');
+  submitPick(room, a.id, a.hand[0].id);
+
+  const state = publicState(room, b.id);
+  assert.equal(state.players[0].status, 'waiting');
+  assert.equal(state.players[1].status, 'playing');
+  assert.equal(state.events[0].type, 'pick');
+  assert.match(state.events[0].message, /플레이했습니다/);
+
+  setPlayerConnection(room, b.id, false);
+  const disconnected = publicState(room, a.id);
+  assert.equal(disconnected.players[1].status, 'disconnected');
+  assert.equal(disconnected.events[0].type, 'disconnect');
 });

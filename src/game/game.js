@@ -24,6 +24,7 @@ export function createRoom(hostName = 'Player') {
     currentPlayerIndex: 0,
     lastReveal: [],
     claimedCombos: [],
+    events: [],
   };
 }
 
@@ -46,6 +47,7 @@ export function joinRoom(room, name) {
   if (room.players.length >= MAX_PLAYERS) throw new Error('방이 가득 찼습니다.');
   const player = createPlayer(name, false);
   room.players.push(player);
+  addEvent(room, 'join', `${player.name}님이 방에 참가했습니다.`, player.id);
   return player;
 }
 
@@ -67,6 +69,7 @@ export function startGame(room) {
   room.phase = 'goal';
   room.lastReveal = [];
   room.currentPlayerIndex = 0;
+  addEvent(room, 'game_start', '게임을 시작합니다. 비밀 목표를 선택하세요.');
 
   const goalDeck = shuffle(goals);
   room.players.forEach((p, idx) => {
@@ -81,6 +84,7 @@ export function chooseGoal(room, playerId, goalId) {
   const goal = p.goalOptions.find((g) => g.id === goalId);
   if (!goal) throw new Error('선택할 수 없는 목표입니다.');
   p.goal = goal;
+  addEvent(room, 'goal_ready', `${p.name}님이 비밀 목표를 선택했습니다.`, p.id);
   maybeBeginDraft(room);
 }
 
@@ -88,6 +92,7 @@ function maybeBeginDraft(room) {
   if (room.players.every((p) => p.goal)) {
     room.phase = 'draft';
     dealRound(room);
+    addEvent(room, 'round_start', 'Round 1이 시작됐습니다. 손패는 왼쪽으로 전달됩니다.');
     advanceBots(room);
   }
 }
@@ -150,6 +155,10 @@ function resolveTurn(room, player, selected, marketCard = null) {
 
   player.playArea.push(gained);
   room.lastReveal = [{ playerId: player.id, playerName: player.name, card: gained }];
+  const message = marketCard
+    ? `${player.name}: ${selected.label} → 시장, ${gained.label} 획득`
+    : `${player.name}님이 ${gained.label}을 플레이했습니다.`;
+  addEvent(room, marketCard ? 'market' : 'pick', message, player.id);
 }
 
 function advanceTurn(room, runBots = true) {
@@ -160,16 +169,19 @@ function advanceTurn(room, runBots = true) {
       if (room.round >= 3) {
         room.phase = 'finished';
         room.currentPlayerIndex = 0;
+        addEvent(room, 'game_end', '게임이 종료됐습니다. 최종 점수를 확인하세요.');
         return;
       }
       room.round += 1;
       room.pick = 1;
       room.direction = room.round === 2 ? 'right' : 'left';
       dealRound(room);
+      addEvent(room, 'round_start', `Round ${room.round}가 시작됐습니다. 손패는 ${room.direction === 'left' ? '왼쪽' : '오른쪽'}으로 전달됩니다.`);
     } else {
       rotateHands(room);
       room.pick += 1;
       room.currentPlayerIndex = 0;
+      addEvent(room, 'pass', `모든 플레이어가 행동했습니다. 손패를 ${room.direction === 'left' ? '왼쪽' : '오른쪽'}으로 전달합니다.`);
     }
   }
 
@@ -193,6 +205,14 @@ export function claimCombo(room, playerId, container, name) {
   if (!possible) throw new Error('아직 완성되지 않은 조합입니다.');
   room.claimedCombos.push(key);
   p.claims.push(key);
+  addEvent(room, 'claim', `${p.name}님이 ${container} ${name}을 Claim했습니다. +1점`, p.id);
+}
+
+export function setPlayerConnection(room, playerId, connected) {
+  const player = mustPlayer(room, playerId);
+  if (player.connected === connected) return;
+  player.connected = connected;
+  addEvent(room, connected ? 'reconnect' : 'disconnect', `${player.name}님의 연결이 ${connected ? '복구됐습니다' : '끊겼습니다'}.`, player.id);
 }
 
 function goalScore(player) {
@@ -249,10 +269,25 @@ export function publicState(room, viewerId) {
       playArea: p.playArea,
       claimCount: p.claims.length,
       cardCount: p.playArea.length,
+      status: playerStatus(room, p),
     })),
     lastReveal: room.lastReveal,
+    events: room.events.slice(-30).reverse(),
     scores,
   };
+}
+
+function playerStatus(room, player) {
+  if (!player.connected) return 'disconnected';
+  if (room.phase === 'goal') return player.goal ? 'ready' : 'choosing_goal';
+  if (room.phase === 'draft') return room.players[room.currentPlayerIndex]?.id === player.id ? 'playing' : 'waiting';
+  if (room.phase === 'finished') return 'finished';
+  return 'lobby';
+}
+
+function addEvent(room, type, message, playerId = null) {
+  room.events.push({ id: id('event'), type, message, playerId });
+  if (room.events.length > 30) room.events.splice(0, room.events.length - 30);
 }
 
 function mustPlayer(room, playerId) {

@@ -4,7 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer } from 'ws';
 import { gameStore } from './game-store.js';
-import { createRoom, joinRoom, startGame, chooseGoal, submitPick, claimCombo, publicState } from '../game/game.js';
+import { createRoom, joinRoom, startGame, chooseGoal, submitPick, claimCombo, publicState, setPlayerConnection } from '../game/game.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.resolve(__dirname, '../../public');
@@ -43,7 +43,7 @@ wss.on('connection', (ws) => {
     if (ctx?.roomId && ctx?.playerId) {
       const room = gameStore.get(ctx.roomId);
       const p = room?.players.find((x) => x.id === ctx.playerId);
-      if (p) p.connected = false;
+      if (p) setPlayerConnection(room, p.id, false);
       if (room) broadcastRoom(room);
     }
     clients.delete(ws);
