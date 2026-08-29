@@ -34,25 +34,45 @@ function resources(cards: readonly Card[], container: ContainerName): Resources 
   return { exact, operationWildcards, containerWildcards, universalWildcards };
 }
 
-export function canBuild(cards: readonly Card[], container: ContainerName, requires: readonly string[]): boolean {
+/**
+ * Which of `requires` this play area can supply for `container`, spending each
+ * card on at most one slot: an exact card first, then an operation wildcard for
+ * that operation, then any free wildcard.
+ *
+ * The UI's combo hints read this, so a slot shown as covered is a slot the
+ * rules agree is covered.
+ */
+export function coveredOperations(
+  cards: readonly Card[],
+  container: ContainerName,
+  requires: readonly string[],
+): Set<string> {
   const r = resources(cards, container);
   const opWilds = [...r.operationWildcards];
   let freeWilds = r.containerWildcards + r.universalWildcards;
+  const covered = new Set<string>();
 
   for (const op of requires) {
-    if (r.exact.has(op)) continue;
+    if (r.exact.has(op)) {
+      covered.add(op);
+      continue;
+    }
     const opIndex = opWilds.indexOf(op);
     if (opIndex >= 0) {
       opWilds.splice(opIndex, 1);
+      covered.add(op);
       continue;
     }
     if (freeWilds > 0) {
       freeWilds -= 1;
-      continue;
+      covered.add(op);
     }
-    return false;
   }
-  return true;
+  return covered;
+}
+
+export function canBuild(cards: readonly Card[], container: ContainerName, requires: readonly string[]): boolean {
+  return coveredOperations(cards, container, requires).size === requires.length;
 }
 
 export function findCombos(cards: readonly Card[]): Combo[] {

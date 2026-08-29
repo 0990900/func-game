@@ -1,0 +1,5 @@
+dist/
+node_modules/
+
+# Raw generated art — optimised versions land with the Pixi table (milestone D).
+public/assets/
