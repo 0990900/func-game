@@ -9,6 +9,7 @@
     "test": "node --test"
   },
   "dependencies": {
+    "fun-fp-js": "0.2.2",
     "ws": "^8.18.0"
   }
 }

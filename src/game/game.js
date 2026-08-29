@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { Maybe } from 'fun-fp-js';
 import { createDeck } from './cards.js';
 import { shuffle } from './random.js';
 import { goals } from './goals.js';
@@ -258,7 +259,7 @@ function goalScore(player) {
 }
 
 export function publicState(room, viewerId) {
-  const viewer = room.players.find((p) => p.id === viewerId);
+  const viewer = Maybe.fromNullable(room.players.find((p) => p.id === viewerId));
   const turnsCompleted = room.players.reduce((sum, player) => sum + player.playArea.length, 0);
   const scores = room.phase === 'finished'
     ? room.players.map((p) => {
@@ -268,6 +269,14 @@ export function publicState(room, viewerId) {
       }).sort((a, b) => b.total - a.total)
     : null;
 
+  return Maybe.fold(
+    () => projectPublicState(room, null, turnsCompleted, scores),
+    (player) => projectPublicState(room, player, turnsCompleted, scores),
+    viewer,
+  );
+}
+
+function projectPublicState(room, viewer, turnsCompleted, scores) {
   return {
     roomId: room.id,
     phase: room.phase,

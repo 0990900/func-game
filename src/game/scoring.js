@@ -1,7 +1,16 @@
+import { curry, pipe } from 'fun-fp-js';
 import { scoringCombos } from './combos.js';
 
+const sumBy = curry((project, values) => values.reduce((sum, value) => sum + project(value), 0));
+
+const utilityOperations = pipe(
+  (cards) => cards.filter((card) => card.kind === 'utility'),
+  (cards) => cards.map((card) => card.operation),
+  (operations) => new Set(operations),
+);
+
 export function scoreUtilities(cards) {
-  const operations = new Set(cards.filter((c) => c.kind === 'utility').map((c) => c.operation));
+  const operations = utilityOperations(cards);
   const n = operations.size;
   let diversity = 0;
   if (n === 2) diversity = 1;
@@ -16,7 +25,7 @@ export function scoreUtilities(cards) {
 
 export function scorePlayer(player) {
   const combos = scoringCombos(player.playArea);
-  const comboScore = combos.reduce((sum, combo) => sum + combo.score, 0);
+  const comboScore = sumBy((combo) => combo.score, combos);
   const utilities = scoreUtilities(player.playArea);
   const claimScore = player.claims.length;
   return {
