@@ -53,6 +53,7 @@ button.secondary { background:transparent; color:var(--text); } button:disabled 
 .statusbar { position:sticky; z-index:5; top:8px; margin:var(--space-4) 0; padding:10px 12px; border:1px solid #4a4024; background:rgba(20,17,9,.94); backdrop-filter:blur(12px); box-shadow:0 8px 24px rgba(0,0,0,.3); }
 .statusbar #phase { color:var(--accent); font-weight:900; font-variant-numeric:tabular-nums; }
 .turn-board { display:grid; grid-template-columns:1fr auto; gap:var(--space-5); align-items:end; padding:var(--space-4); border:1px solid var(--line); background:#0d141c; }
+.turn-board>* { min-width:0; }
 .eyebrow { display:block; margin-bottom:var(--space-2); color:var(--muted); font-size:12px; font-weight:900; letter-spacing:.12em; }
 .turn-track { display:flex; align-items:center; gap:var(--space-2); overflow-x:auto; }
 .turn-track>i { color:#526170; font-style:normal; }
