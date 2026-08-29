@@ -4,7 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer } from 'ws';
 import { gameStore } from './game-store.js';
-import { createRoom, joinRoom, startGame, chooseGoal, submitPick, claimCombo, publicState, setPlayerConnection } from '../game/game.js';
+import { createRoom, joinRoom, startGame, chooseGoal, submitPick, claimCombo, finishClaim, publicState, setPlayerConnection } from '../game/game.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.resolve(__dirname, '../../public');
@@ -70,6 +70,7 @@ function handle(ws, msg) {
   } else if (msg.type === 'choose_goal') chooseGoal(room, ctx.playerId, msg.goalId);
   else if (msg.type === 'pick') submitPick(room, ctx.playerId, msg.cardId, msg.marketCardId || null);
   else if (msg.type === 'claim') claimCombo(room, ctx.playerId, msg.container, msg.name);
+  else if (msg.type === 'finish_claim') finishClaim(room, ctx.playerId);
   else throw new Error('지원하지 않는 동작입니다.');
   broadcastRoom(room);
 }

@@ -22,6 +22,8 @@ export function createRoom(hostName = 'Player') {
     deck: [],
     market: [],
     currentPlayerIndex: 0,
+    turnsThisPick: 0,
+    pendingClaim: null,
     lastReveal: [],
     claimedCombos: [],
     events: [],
@@ -61,6 +63,7 @@ export function startGame(room) {
   if (room.players.length < 2) addBotsToFour(room);
   else addBotsToFour(room);
 
+  room.players = shuffle(room.players);
   room.deck = shuffle(createDeck());
   room.market = room.deck.splice(0, 4);
   room.round = 1;
@@ -70,6 +73,7 @@ export function startGame(room) {
   room.lastReveal = [];
   room.currentPlayerIndex = 0;
   addEvent(room, 'game_start', '게임을 시작합니다. 비밀 목표를 선택하세요.');
+  addEvent(room, 'turn_order', `자리 순서: ${room.players.map((player) => player.name).join(' → ')}`);
 
   const goalDeck = shuffle(goals);
   room.players.forEach((p, idx) => {
@@ -99,11 +103,12 @@ function maybeBeginDraft(room) {
 
 function dealRound(room) {
   room.players.forEach((p) => { p.hand = room.deck.splice(0, 5); });
-  room.currentPlayerIndex = 0;
+  preparePick(room);
 }
 
 export function submitPick(room, playerId, cardId, marketCardId = null) {
   if (room.phase !== 'draft') throw new Error('지금은 카드를 선택할 수 없습니다.');
+  if (room.pendingClaim) throw new Error('Claim 선택을 먼저 마쳐야 합니다.');
   const p = mustPlayer(room, playerId);
   const current = room.players[room.currentPlayerIndex];
   if (!current || current.id !== playerId) throw new Error('현재 당신의 턴이 아닙니다.');
@@ -116,8 +121,15 @@ export function submitPick(room, playerId, cardId, marketCardId = null) {
     if (!market) throw new Error('시장에 없는 카드입니다.');
   }
 
+  const before = new Set(findCombos(p.playArea).map(comboKey));
   resolveTurn(room, p, card, market);
-  advanceTurn(room);
+  const claimKeys = findCombos(p.playArea)
+    .map(comboKey)
+    .filter((key) => !before.has(key) && !room.claimedCombos.includes(key));
+  if (claimKeys.length) {
+    room.pendingClaim = { playerId: p.id, keys: claimKeys };
+    addEvent(room, 'claim_ready', `${p.name}님이 새 조합을 완성했습니다. Claim을 선택합니다.`, p.id);
+  } else advanceTurn(room);
 }
 
 function advanceBots(room) {
@@ -126,7 +138,12 @@ function advanceBots(room) {
     if (!p?.bot) return;
     if (!p.hand.length) return;
     const card = [...p.hand].sort((a, b) => botValue(b, p) - botValue(a, p))[0];
+    const before = new Set(findCombos(p.playArea).map(comboKey));
     resolveTurn(room, p, card, null);
+    findCombos(p.playArea)
+      .map(comboKey)
+      .filter((key) => !before.has(key) && !room.claimedCombos.includes(key))
+      .forEach((key) => awardClaim(room, p, key));
     advanceTurn(room, false);
   }
 }
@@ -162,9 +179,10 @@ function resolveTurn(room, player, selected, marketCard = null) {
 }
 
 function advanceTurn(room, runBots = true) {
-  room.currentPlayerIndex += 1;
+  room.pendingClaim = null;
+  room.turnsThisPick += 1;
 
-  if (room.currentPlayerIndex >= room.players.length) {
+  if (room.turnsThisPick >= room.players.length) {
     if (room.pick >= 5) {
       if (room.round >= 3) {
         room.phase = 'finished';
@@ -180,10 +198,10 @@ function advanceTurn(room, runBots = true) {
     } else {
       rotateHands(room);
       room.pick += 1;
-      room.currentPlayerIndex = 0;
+      preparePick(room);
       addEvent(room, 'pass', `모든 플레이어가 행동했습니다. 손패를 ${room.direction === 'left' ? '왼쪽' : '오른쪽'}으로 전달합니다.`);
     }
-  }
+  } else room.currentPlayerIndex = (room.currentPlayerIndex + 1) % room.players.length;
 
   if (runBots) advanceBots(room);
 }
@@ -200,12 +218,18 @@ function rotateHands(room) {
 export function claimCombo(room, playerId, container, name) {
   const p = mustPlayer(room, playerId);
   const key = `${container}:${name}`;
+  if (room.pendingClaim?.playerId !== playerId || !room.pendingClaim.keys.includes(key)) throw new Error('지금 Claim할 수 없는 조합입니다.');
   if (room.claimedCombos.includes(key)) throw new Error('이미 Claim된 조합입니다.');
   const possible = findCombos(p.playArea).some((c) => c.container === container && c.name === name);
   if (!possible) throw new Error('아직 완성되지 않은 조합입니다.');
-  room.claimedCombos.push(key);
-  p.claims.push(key);
-  addEvent(room, 'claim', `${p.name}님이 ${container} ${name}을 Claim했습니다. +1점`, p.id);
+  awardClaim(room, p, key);
+  room.pendingClaim.keys = room.pendingClaim.keys.filter((candidate) => candidate !== key);
+  if (!room.pendingClaim.keys.length) advanceTurn(room);
+}
+
+export function finishClaim(room, playerId) {
+  if (room.pendingClaim?.playerId !== playerId) throw new Error('지금은 Claim 선택을 마칠 수 없습니다.');
+  advanceTurn(room);
 }
 
 export function setPlayerConnection(room, playerId, connected) {
@@ -257,6 +281,7 @@ export function publicState(room, viewerId) {
       turnsTotal: 60,
       myPicks: viewer?.playArea.length || 0,
       myPicksTotal: 15,
+      turnsThisPick: room.turnsThisPick,
     },
     hostPlayerId: room.hostPlayerId,
     me: viewer ? {
@@ -265,10 +290,14 @@ export function publicState(room, viewerId) {
       hand: viewer.hand,
       goalOptions: room.phase === 'goal' ? viewer.goalOptions : [],
       goal: viewer.goal,
-      isMyTurn: room.phase === 'draft' && room.players[room.currentPlayerIndex]?.id === viewer.id,
-      availableClaims: findCombos(viewer.playArea).filter((c) => !room.claimedCombos.includes(`${c.container}:${c.name}`)),
+      isMyTurn: room.phase === 'draft' && !room.pendingClaim && room.players[room.currentPlayerIndex]?.id === viewer.id,
+      availableClaims: room.pendingClaim?.playerId === viewer.id
+        ? findCombos(viewer.playArea).filter((combo) => room.pendingClaim.keys.includes(comboKey(combo)) && !room.claimedCombos.includes(comboKey(combo)))
+        : [],
+      canFinishClaim: room.pendingClaim?.playerId === viewer.id,
     } : null,
     currentPlayerId: room.phase === 'draft' ? room.players[room.currentPlayerIndex]?.id || null : null,
+    turnOrder: actionOrder(room),
     market: room.market,
     players: room.players.map((p) => ({
       id: p.id,
@@ -300,7 +329,10 @@ function publicScore(player) {
 function playerStatus(room, player) {
   if (!player.connected) return 'disconnected';
   if (room.phase === 'goal') return player.goal ? 'ready' : 'choosing_goal';
-  if (room.phase === 'draft') return room.players[room.currentPlayerIndex]?.id === player.id ? 'playing' : 'waiting';
+  if (room.phase === 'draft') {
+    if (room.pendingClaim?.playerId === player.id) return 'claiming';
+    return room.players[room.currentPlayerIndex]?.id === player.id ? 'playing' : 'waiting';
+  }
   if (room.phase === 'finished') return 'finished';
   return 'lobby';
 }
@@ -308,6 +340,29 @@ function playerStatus(room, player) {
 function addEvent(room, type, message, playerId = null) {
   room.events.push({ id: id('event'), type, message, playerId });
   if (room.events.length > 30) room.events.splice(0, room.events.length - 30);
+}
+
+function preparePick(room) {
+  const globalPick = (room.round - 1) * 5 + room.pick - 1;
+  room.currentPlayerIndex = globalPick % room.players.length;
+  room.turnsThisPick = 0;
+  room.pendingClaim = null;
+}
+
+function actionOrder(room) {
+  if (!room.players.length) return [];
+  const globalPick = Math.max(0, (room.round - 1) * 5 + room.pick - 1);
+  const starter = globalPick % room.players.length;
+  return room.players.map((_, offset) => room.players[(starter + offset) % room.players.length].id);
+}
+
+function comboKey(combo) { return `${combo.container}:${combo.name}`; }
+
+function awardClaim(room, player, key) {
+  const [container, name] = key.split(':');
+  room.claimedCombos.push(key);
+  player.claims.push(key);
+  addEvent(room, 'claim', `${player.name}님이 ${container} ${name}을 Claim했습니다. +1점`, player.id);
 }
 
 function mustPlayer(room, playerId) {

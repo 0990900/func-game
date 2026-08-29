@@ -10,9 +10,11 @@ test('the same combo can be claimed only once per game', () => {
   const a = room.players[0];
   a.playArea = [card('Maybe', 'map')];
   b.playArea = [card('Maybe', 'map')];
+  room.pendingClaim = { playerId: a.id, keys: ['Maybe:Functor'] };
 
   claimCombo(room, a.id, 'Maybe', 'Functor');
 
+  room.pendingClaim = { playerId: b.id, keys: ['Maybe:Functor'] };
   assert.throws(() => claimCombo(room, b.id, 'Maybe', 'Functor'), /이미 Claim된/);
   assert.equal(publicState(room, b.id).me.availableClaims.length, 0);
   assert.deepEqual(a.claims, ['Maybe:Functor']);
