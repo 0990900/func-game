@@ -9,6 +9,7 @@
 import { Container, Sprite, Texture } from 'pixi.js';
 import { gsap } from 'gsap';
 import { CardSprite } from './CardSprite.ts';
+import type { CardMetrics } from './CardSprite.ts';
 import { prefersReducedMotion, seconds } from './motion.ts';
 import type { Point } from './motion.ts';
 import type { Card } from '../../../src/core/types.ts';
@@ -40,10 +41,17 @@ export class EffectLayer {
    * underneath takes over. A no-op under reduced motion — the state is already
    * correct without it.
    */
-  flyCard(card: Card, from: Point, to: Point, emblem?: Texture | undefined): void {
+  flyCard(
+    card: Card,
+    from: Point,
+    to: Point,
+    emblem?: Texture | undefined,
+    metrics?: CardMetrics | undefined,
+    width?: number | undefined,
+  ): void {
     if (prefersReducedMotion()) return;
 
-    const sprite = new CardSprite({ card, emblem });
+    const sprite = new CardSprite({ card, emblem, metrics, width });
     sprite.position.set(from.x, from.y);
     sprite.alpha = 0.96;
     this.layer.addChild(sprite);

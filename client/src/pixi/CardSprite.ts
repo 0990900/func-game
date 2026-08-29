@@ -13,8 +13,27 @@ import { containerColor, palette, toHexNumber, utilityColor, wildcardColor } fro
 import type { Card, ContainerName } from '../../../src/core/types.ts';
 
 export const CARD_WIDTH = 148;
-export const CARD_HEIGHT = 190;
+/** Below this a card cannot hold its label and hint legibly. */
+export const MIN_CARD_WIDTH = 118;
 const RADIUS = 4;
+
+/**
+ * Vertical rhythm inside a card. The compact variant is for phones, where the
+ * hand wraps to three rows and every card's height is paid three times.
+ */
+export interface CardMetrics {
+  readonly height: number;
+  readonly glyphSize: number;
+  readonly glyphY: number;
+  readonly nameY: number;
+  readonly hintY: number;
+}
+
+const ROOMY: CardMetrics = { height: 190, glyphSize: 38, glyphY: 52, nameY: 104, hintY: 134 };
+const COMPACT: CardMetrics = { height: 156, glyphSize: 30, glyphY: 44, nameY: 84, hintY: 110 };
+
+/** Cards get shorter once the table is narrow enough to wrap the hand. */
+export const metricsFor = (width: number): CardMetrics => (width <= 420 ? COMPACT : ROOMY);
 
 const SURFACE = toHexNumber(palette.surface2);
 const MUTED = toHexNumber(palette.muted);
@@ -38,6 +57,8 @@ export interface CardSpriteOptions {
   readonly card: Card;
   readonly emblem?: Texture | undefined;
   readonly onTap?: ((card: Card) => void) | undefined;
+  readonly metrics?: CardMetrics | undefined;
+  readonly width?: number | undefined;
 }
 
 export class CardSprite extends Container {
@@ -47,9 +68,18 @@ export class CardSprite extends Container {
   private selected = false;
   private enabled = true;
 
-  constructor({ card, emblem, onTap }: CardSpriteOptions) {
+  /** Not `height`: that name belongs to Pixi's Container. */
+  readonly cardHeight: number;
+  private readonly metrics: CardMetrics;
+
+  readonly cardWidth: number;
+
+  constructor({ card, emblem, onTap, metrics = ROOMY, width = CARD_WIDTH }: CardSpriteOptions) {
     super();
     this.card = card;
+    this.metrics = metrics;
+    this.cardHeight = metrics.height;
+    this.cardWidth = width;
     const tint = cardColor(card);
     const face = cardFace(card);
 
@@ -58,9 +88,9 @@ export class CardSprite extends Container {
 
     // The decorative ring is clipped to the card, matching the DOM ::after.
     const ring = new Graphics()
-      .circle(CARD_WIDTH - 6, CARD_HEIGHT + 2, 55)
+      .circle(width - 6, metrics.height + 2, 55)
       .stroke({ width: 18, color: tint, alpha: 0.1 });
-    const mask = new Graphics().roundRect(0, 0, CARD_WIDTH, CARD_HEIGHT, RADIUS).fill(0xffffff);
+    const mask = new Graphics().roundRect(0, 0, width, metrics.height, RADIUS).fill(0xffffff);
     ring.mask = mask;
     this.addChild(ring, mask);
 
@@ -84,28 +114,28 @@ export class CardSprite extends Container {
       style: label({ fontSize: 11, fontWeight: '800', letterSpacing: 1, fill: MUTED }),
     });
     kind.anchor.set(1, 0);
-    kind.position.set(CARD_WIDTH - 11, 14);
+    kind.position.set(width - 11, 14);
     this.addChild(kind);
 
     const glyph = new Text({
       text: face.operationSymbol,
-      style: label({ fontFamily: 'Georgia, serif', fontSize: 38, fontWeight: '700', fill: tint }),
+      style: label({ fontFamily: 'Georgia, serif', fontSize: metrics.glyphSize, fontWeight: '700', fill: tint }),
     });
-    glyph.position.set(11, 52);
+    glyph.position.set(11, metrics.glyphY);
     this.addChild(glyph);
 
     const name = new Text({
       text: face.operationLabel,
-      style: label({ fontSize: 19, fontWeight: '900', wordWrap: true, wordWrapWidth: CARD_WIDTH - 22 }),
+      style: label({ fontSize: 19, fontWeight: '900', wordWrap: true, wordWrapWidth: width - 22 }),
     });
-    name.position.set(11, 104);
+    name.position.set(11, metrics.nameY);
     this.addChild(name);
 
     const hint = new Text({
       text: face.hint,
-      style: label({ fontSize: 12, fill: 0xc7d1db, wordWrap: true, wordWrapWidth: CARD_WIDTH - 22, lineHeight: 16 }),
+      style: label({ fontSize: 12, fill: 0xc7d1db, wordWrap: true, wordWrapWidth: width - 22, lineHeight: 16 }),
     });
-    hint.position.set(11, 134);
+    hint.position.set(11, metrics.hintY);
     this.addChild(hint);
 
     if (onTap) {
@@ -116,11 +146,12 @@ export class CardSprite extends Container {
   }
 
   private drawFrame(tint: number): void {
+    const { height } = this.metrics;
     this.frame
       .clear()
-      .roundRect(4, 5, CARD_WIDTH, CARD_HEIGHT, RADIUS)
+      .roundRect(4, 5, this.cardWidth, height, RADIUS)
       .fill({ color: 0x000000, alpha: 0.35 })
-      .roundRect(0, 0, CARD_WIDTH, CARD_HEIGHT, RADIUS)
+      .roundRect(0, 0, this.cardWidth, height, RADIUS)
       .fill(SURFACE)
       .stroke({ width: 1, color: tint });
   }
@@ -131,7 +162,7 @@ export class CardSprite extends Container {
     this.highlight.clear();
     if (selected) {
       this.highlight
-        .roundRect(-3, -3, CARD_WIDTH + 6, CARD_HEIGHT + 6, RADIUS + 2)
+        .roundRect(-3, -3, this.cardWidth + 6, this.metrics.height + 6, RADIUS + 2)
         .stroke({ width: 3, color: ACCENT });
     }
   }

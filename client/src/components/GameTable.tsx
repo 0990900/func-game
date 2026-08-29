@@ -61,17 +61,10 @@ export function GameTable({ state }: { readonly state: PublicState }) {
 
   return (
     <>
+      {/* Round and pick live in the status bar; repeating them here only cost height. */}
       <div className="turn-board">
-        <div>
-          <span className="eyebrow">턴 순서</span>
-          <TurnTrack state={state} />
-        </div>
-        <div>
-          <span className="eyebrow">진행</span>
-          <b>
-            Round {state.round}/{state.progress.roundsTotal} · Pick {state.pick}/{state.progress.picksPerRound}
-          </b>
-        </div>
+        <span className="eyebrow">턴 순서</span>
+        <TurnTrack state={state} />
       </div>
 
       <section className="panel table-panel">

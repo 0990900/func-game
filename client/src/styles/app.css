@@ -111,16 +111,21 @@ button:disabled { opacity: .42; cursor: not-allowed; }
 }
 
 .statusbar {
-  position: sticky; z-index: 5; top: 8px; margin: var(--space-4) 0; padding: 10px 12px;
+  position: sticky; z-index: 5; top: 8px; margin: var(--space-3) 0; padding: 8px 12px;
   border: 1px solid #4a4024; background: rgba(20, 17, 9, .94);
   backdrop-filter: blur(12px); box-shadow: 0 8px 24px rgba(0, 0, 0, .3);
 }
-.statusbar #phase { color: var(--accent); font-weight: 900; font-variant-numeric: tabular-nums; }
+.status-progress { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
+.status-progress b {
+  color: var(--accent); font-weight: 900; font-variant-numeric: tabular-nums;
+  font-size: 14px; white-space: nowrap;
+}
+.status-room { color: var(--muted); font-size: 13px; }
 main.my-turn .statusbar { box-shadow: 0 0 0 2px rgba(244, 201, 93, .2), 0 8px 24px rgba(0, 0, 0, .3); }
 
 .turn-board {
-  display: grid; grid-template-columns: 1fr auto; gap: var(--space-5); align-items: end;
-  padding: var(--space-4); border: 1px solid var(--line); background: #0d141c;
+  display: grid; gap: var(--space-2);
+  padding: var(--space-3) var(--space-4); border: 1px solid var(--line); background: #0d141c;
 }
 /* Same reason as .columns > * — the turn track scrolls inside itself, not the page. */
 .turn-board > * { min-width: 0; }
@@ -187,8 +192,14 @@ main.my-turn .statusbar { box-shadow: 0 0 0 2px rgba(244, 201, 93, .2), 0 8px 24
 @media (max-width: 760px) {
   main { width: min(100% - 20px, 1180px); padding-top: var(--space-3); }
   .columns { grid-template-columns: 1fr; }
-  .turn-board { grid-template-columns: 1fr; }
   .panel { padding: var(--space-4); }
+
+  /* Once play starts the masthead is just decoration taking a fifth of the
+     screen; keep the mark and drop the rest. */
+  main.is-playing header { gap: var(--space-2); }
+  main.is-playing h1 { font-size: 19px; }
+  main.is-playing header p { display: none; }
+  main.is-playing .brand-mark { width: 34px; height: 34px; font-size: 22px; box-shadow: 3px 3px 0 #05070a; }
   /* Hand and market scroll inside their own container — never the document. */
   .cards { display: flex; overflow-x: auto; scroll-snap-type: x mandatory; padding: 4px 4px 12px; }
   .card { flex: 0 0 148px; scroll-snap-align: start; }

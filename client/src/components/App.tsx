@@ -16,27 +16,38 @@ const connectionLabel: Record<string, string> = {
   error: '연결 실패',
 };
 
+/**
+ * One line, always. It stays on screen while the table scrolls, so every pixel
+ * it takes is a pixel of table the player cannot see — on a phone the old
+ * two-line version cost 13% of the viewport.
+ *
+ * The room code is only useful before the game starts (a started room is full),
+ * so it gives way to progress once the draft begins.
+ */
 function StatusBar() {
   const state = useGame((s) => s.state);
   const roomCode = useGame((s) => s.roomCode);
   if (!state) return null;
 
+  const remaining = state.progress.turnsTotal - state.progress.turnsCompleted;
+
   return (
     <div className="statusbar">
-      <span>
-        방 <b className="room-code">{roomCode}</b>
-      </span>
-      <span id="phase">
-        {phaseName(state.phase)}
-        {state.phase === 'draft' && (
-          <>
-            {' · '}Round {state.round}/{state.progress.roundsTotal}
-            {' · '}Pick {state.pick}/{state.progress.picksPerRound}
-            {' · '}남은 턴 {state.progress.turnsTotal - state.progress.turnsCompleted}
-            {' · '}{directionName(state.direction)}으로 전달
-          </>
-        )}
-      </span>
+      {state.phase === 'draft' ? (
+        <span className="status-progress">
+          <b>R{state.round}/{state.progress.roundsTotal}</b>
+          <b>P{state.pick}/{state.progress.picksPerRound}</b>
+          <b>{remaining}턴</b>
+          <b title={`손패를 ${directionName(state.direction)}으로 전달합니다`}>
+            {state.direction === 'left' ? '←' : '→'}
+          </b>
+        </span>
+      ) : (
+        <span className="status-progress"><b>{phaseName(state.phase)}</b></span>
+      )}
+      {state.phase !== 'draft' && (
+        <span className="status-room">방 <b className="room-code">{roomCode}</b></span>
+      )}
     </div>
   );
 }
@@ -61,8 +72,12 @@ export function App() {
 
   const myTurn = Boolean(state?.me?.isMyTurn);
 
+  // Once play starts the title has done its job; it shrinks to give the table
+  // back the vertical space, which matters most on a phone.
+  const playing = state !== null && state.phase !== 'lobby';
+
   return (
-    <main className={myTurn ? 'my-turn' : undefined}>
+    <main className={`${myTurn ? 'my-turn' : ''}${playing ? ' is-playing' : ''}`.trim() || undefined}>
       <header>
         <div className="brand">
           <span className="brand-mark" aria-hidden="true">λ</span>

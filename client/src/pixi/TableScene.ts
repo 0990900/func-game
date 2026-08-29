@@ -7,7 +7,7 @@
  * it was to where it now belongs.
  */
 import { Application, Container, Graphics, Text, TilingSprite } from 'pixi.js';
-import { CARD_HEIGHT, CARD_WIDTH, CardSprite, cardColor } from './CardSprite.ts';
+import { CARD_WIDTH, MIN_CARD_WIDTH, CardSprite, cardColor, metricsFor } from './CardSprite.ts';
 import { EffectLayer } from './effects.ts';
 import { dealIn, killTweens, moveTo, pulse } from './motion.ts';
 import type { Point } from './motion.ts';
@@ -18,6 +18,8 @@ import type { Card, PublicState, Reveal } from '../../../src/core/types.ts';
 
 const GAP = 12;
 const PAD = 16;
+/** A full hand. Cards shrink a little to keep it on one row when they nearly fit. */
+const HAND_SIZE = 5;
 const ROW_LABEL = 22;
 const CHIP_HEIGHT = 30;
 
@@ -58,6 +60,8 @@ export class TableScene {
   private readonly handLayer = new Container();
   private readonly marketLayer = new Container();
   private readonly areaLayer = new Container();
+  /** Row headings are stable objects: recreating them every update leaked Text. */
+  private readonly rowLabels = new Map<Container, Text>();
   /** Live sprites by card id, so identity survives a state update. */
   private readonly sprites = new Map<string, CardSprite>();
   private width: number;
@@ -73,6 +77,8 @@ export class TableScene {
   private lastCurrentPlayerId: string | null = null;
   /** Y of the market row inside the canvas, so the page can scroll to it. */
   private marketTop = 0;
+  /** Card geometry the cached sprites were built at. */
+  private geometryKey = '';
 
   constructor(app: Application, textures: TableTextures, callbacks: TableCallbacks, width: number) {
     this.textures = textures;
@@ -97,16 +103,41 @@ export class TableScene {
     return this.marketTop;
   }
 
+  /**
+   * Card width for the current table width. A hand of five wraps to a stranded
+   * second row at full size on a desktop column, so cards give up a few pixels
+   * to stay on one line — but never below the width their text needs.
+   */
+  private cardWidth(): number {
+    const available = this.width - PAD * 2;
+    const fitsFive = (available - (HAND_SIZE - 1) * GAP) / HAND_SIZE;
+    return fitsFive >= MIN_CARD_WIDTH ? Math.min(CARD_WIDTH, Math.floor(fitsFive)) : CARD_WIDTH;
+  }
+
   destroy(): void {
     for (const sprite of this.sprites.values()) killTweens(sprite);
     this.effects.destroy();
     this.root.destroy({ children: true });
     this.sprites.clear();
     this.lastSeen.clear();
+    this.rowLabels.clear();
   }
 
   /** Rebuilds layout from state, reusing every sprite whose card is still on the table. */
   update({ state, selectedCardId, selectedMarketId }: TableInput): number {
+    // Sprites bake their size, so a resize that changes card geometry has to
+    // rebuild them rather than reuse cards drawn at the old dimensions.
+    const geometryKey = `${this.cardWidth()}x${metricsFor(this.width).height}`;
+    if (geometryKey !== this.geometryKey) {
+      this.geometryKey = geometryKey;
+      for (const sprite of this.sprites.values()) {
+        killTweens(sprite);
+        sprite.destroy({ children: true });
+      }
+      this.sprites.clear();
+      this.lastSeen.clear();
+    }
+
     const myTurn = Boolean(state.me?.isMyTurn);
     const seen = new Set<string>();
     let y = PAD;
@@ -165,6 +196,8 @@ export class TableScene {
       card,
       emblem: this.textures.emblems[emblemKey as 'wildcard'],
       onTap,
+      metrics: metricsFor(this.width),
+      width: this.cardWidth(),
     });
     this.sprites.set(card.id, sprite);
     return sprite;
@@ -181,15 +214,21 @@ export class TableScene {
     onTap: (card: Card) => void;
   }): number {
     const { layer, title, cards, y, seen, selectedId, enabled, onTap } = options;
+    // Detach only: the card sprites in here are reused and must not be destroyed.
     layer.removeChildren();
 
-    const label = heading(title);
+    let label = this.rowLabels.get(layer);
+    if (!label) {
+      label = heading(title);
+      this.rowLabels.set(layer, label);
+    }
     label.position.set(PAD, y);
     layer.addChild(label);
 
     const top = y + ROW_LABEL;
-    // The row scrolls inside the canvas rather than widening it.
-    const perRow = Math.max(1, Math.floor((this.width - PAD * 2 + GAP) / (CARD_WIDTH + GAP)));
+    const cardHeight = metricsFor(this.width).height;
+    const cardWidth = this.cardWidth();
+    const perRow = Math.max(1, Math.floor((this.width - PAD * 2 + GAP) / (cardWidth + GAP)));
 
     cards.forEach((card, index) => {
       const existed = this.sprites.has(card.id);
@@ -201,9 +240,9 @@ export class TableScene {
       const column = index % perRow;
       const row = Math.floor(index / perRow);
       const target: Point = {
-        x: PAD + column * (CARD_WIDTH + GAP),
+        x: PAD + column * (cardWidth + GAP),
         // A selected card lifts, the way the DOM card did.
-        y: top + row * (CARD_HEIGHT + GAP) - (sprite.isSelected() ? 5 : 0),
+        y: top + row * (cardHeight + GAP) - (sprite.isSelected() ? 5 : 0),
       };
       layer.addChild(sprite);
 
@@ -218,11 +257,14 @@ export class TableScene {
     });
 
     const rows = Math.max(1, Math.ceil(cards.length / perRow));
-    return top + rows * (CARD_HEIGHT + GAP);
+    return top + rows * (cardHeight + GAP);
   }
 
   private layoutPlayAreas(state: PublicState, startY: number): number {
-    this.areaLayer.removeChildren();
+    // Chips and their labels are rebuilt every update, so the old ones are
+    // destroyed rather than just detached — detaching alone left them alive and
+    // they reappeared as ghosts at the foot of the table.
+    for (const child of this.areaLayer.removeChildren()) child.destroy();
     let y = startY;
 
     const label = heading('플레이 영역');
@@ -280,12 +322,15 @@ export class TableScene {
     if (!destination) return;
 
     const emblemKey = reveal.card.kind.includes('wildcard') ? 'wildcard' : reveal.card.container;
+    const metrics = metricsFor(this.width);
     this.effects.flyCard(
       reveal.card,
       // A card played from a hidden hand has no last-known seat: drop it in.
-      this.lastSeen.get(reveal.card.id) ?? { x: this.width / 2 - CARD_WIDTH / 2, y: -CARD_HEIGHT },
-      { x: destination.x - CARD_WIDTH / 4, y: destination.y - CARD_HEIGHT / 4 },
+      this.lastSeen.get(reveal.card.id) ?? { x: this.width / 2 - this.cardWidth() / 2, y: -metrics.height },
+      { x: destination.x - this.cardWidth() / 4, y: destination.y - metrics.height / 4 },
       this.textures.emblems[emblemKey as 'wildcard'],
+      metrics,
+      this.cardWidth(),
     );
 
     if (state.players.find((player) => player.id === reveal.playerId)?.status === 'claiming') {
