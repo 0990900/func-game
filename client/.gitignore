@@ -1,5 +1,5 @@
 dist/
 node_modules/
 
-# Raw generated art — optimised versions land with the Pixi table (milestone D).
-public/assets/
+# Raw generated art. The optimised WebP in public/assets/ is what ships.
+art-source/
