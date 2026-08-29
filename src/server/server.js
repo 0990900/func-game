@@ -4,7 +4,9 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer } from 'ws';
 import { gameStore } from './game-store.js';
-import { createRoom, joinRoom, startGame, chooseGoal, submitPick, claimCombo, finishClaim, publicState, setPlayerConnection } from '../game/game.js';
+import { sendToActor } from './room-actor.js';
+import { Game } from '../game/program.js';
+import { createRoom, publicState } from '../game/game.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.resolve(__dirname, '../../public');
@@ -29,56 +31,58 @@ wss.on('connection', (ws) => {
   clients.set(ws, { roomId: null, playerId: null });
   send(ws, 'hello', { message: 'connected' });
 
-  ws.on('message', (raw) => {
+  ws.on('message', async (raw) => {
     try {
       const msg = JSON.parse(raw.toString());
-      handle(ws, msg);
+      await handle(ws, msg);
     } catch (error) {
       send(ws, 'error', { message: error.message || '잘못된 요청입니다.' });
     }
   });
 
-  ws.on('close', () => {
+  ws.on('close', async () => {
     const ctx = clients.get(ws);
     if (ctx?.roomId && ctx?.playerId) {
-      const room = gameStore.get(ctx.roomId);
-      const p = room?.players.find((x) => x.id === ctx.playerId);
-      if (p) setPlayerConnection(room, p.id, false);
-      if (room) broadcastRoom(room);
+      const actor = gameStore.actor(ctx.roomId);
+      const player = actor?.getState().players.find((candidate) => candidate.id === ctx.playerId);
+      if (actor && player) {
+        await sendToActor(actor, Game.setConnection(player.id, false));
+        broadcastRoom(actor.getState());
+      }
     }
     clients.delete(ws);
   });
 });
 
-function handle(ws, msg) {
+async function handle(ws, msg) {
   const ctx = clients.get(ws);
   if (msg.type === 'create_room') {
-    const room = gameStore.add(createRoom(msg.name));
+    const room = createRoom(msg.name);
+    gameStore.add(room);
     ctx.roomId = room.id; ctx.playerId = room.players[0].id;
     broadcastRoom(room); return;
   }
   if (msg.type === 'join_room') {
-    const room = mustRoom(msg.roomId);
-    const player = joinRoom(room, msg.name);
-    ctx.roomId = room.id; ctx.playerId = player.id;
-    broadcastRoom(room); return;
+    const actor = mustActor(msg.roomId);
+    const player = await sendToActor(actor, Game.joinRoom(msg.name));
+    ctx.roomId = msg.roomId; ctx.playerId = player.id;
+    broadcastRoom(actor.getState()); return;
   }
-  const room = mustRoom(ctx.roomId);
+  const actor = mustActor(ctx.roomId);
   if (msg.type === 'start_game') {
-    if (ctx.playerId !== room.hostPlayerId) throw new Error('방장만 시작할 수 있습니다.');
-    startGame(room);
-  } else if (msg.type === 'choose_goal') chooseGoal(room, ctx.playerId, msg.goalId);
-  else if (msg.type === 'pick') submitPick(room, ctx.playerId, msg.cardId, msg.marketCardId || null);
-  else if (msg.type === 'claim') claimCombo(room, ctx.playerId, msg.container, msg.name);
-  else if (msg.type === 'finish_claim') finishClaim(room, ctx.playerId);
+    await sendToActor(actor, Game.startGame(ctx.playerId));
+  } else if (msg.type === 'choose_goal') await sendToActor(actor, Game.chooseGoal(ctx.playerId, msg.goalId));
+  else if (msg.type === 'pick') await sendToActor(actor, Game.pick(ctx.playerId, msg.cardId, msg.marketCardId || null));
+  else if (msg.type === 'claim') await sendToActor(actor, Game.claim(ctx.playerId, msg.container, msg.name));
+  else if (msg.type === 'finish_claim') await sendToActor(actor, Game.finishClaim(ctx.playerId));
   else throw new Error('지원하지 않는 동작입니다.');
-  broadcastRoom(room);
+  broadcastRoom(actor.getState());
 }
 
-function mustRoom(roomId) {
-  const room = gameStore.get(roomId);
-  if (!room) throw new Error('방을 찾을 수 없습니다.');
-  return room;
+function mustActor(roomId) {
+  const actor = gameStore.actor(roomId);
+  if (!actor) throw new Error('방을 찾을 수 없습니다.');
+  return actor;
 }
 function send(ws, type, payload) { if (ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type, ...payload })); }
 function broadcastRoom(room) {
