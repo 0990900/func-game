@@ -19,9 +19,14 @@ import { palette, toHexNumber } from '../theme/tokens.ts';
 function revealMarket(host: HTMLElement, marketTop: number): void {
   if (window.innerWidth > 760) return;
 
-  const top = host.getBoundingClientRect().top + window.scrollY + marketTop - 12;
+  // The status bar is sticky, so scrolling the market to y=0 puts it behind it.
+  // Measure rather than assume: its height changes when the phase line wraps.
+  const statusBar = document.querySelector('.statusbar');
+  const clearance = (statusBar?.getBoundingClientRect().height ?? 0) + 12;
+
+  const top = host.getBoundingClientRect().top + window.scrollY + marketTop - clearance;
   const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
-  window.scrollTo({ top, behavior: reduced ? 'auto' : 'smooth' });
+  window.scrollTo({ top: Math.max(0, top), behavior: reduced ? 'auto' : 'smooth' });
 }
 
 export function TableCanvas() {
