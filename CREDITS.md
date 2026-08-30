@@ -6,6 +6,8 @@
 
 - 출처: <https://kenney.nl/assets/casino-audio> (Kenney Vleugels, kenney.nl)
 - 라이선스: **CC0 1.0** — 저작자 표시는 의무가 아니지만, 출처를 추적할 수 있도록 남깁니다.
+- 원본은 Ogg Vorbis이고, **AAC(`.m4a`, 모노 96kbps)로 변환해** 커밋합니다. Safari가 Ogg Vorbis를
+  `decodeAudioData`로 디코딩하지 못해, 그대로 두면 Safari에서는 카드 소리가 통째로 사라집니다.
 - 사용 파일 (`client/public/sounds/`). 카드에 벌어지는 일이 셋이라 녹음도 셋입니다:
   - `card-slide-1..3.ogg` — 덱에서 한 장이 뽑혀 나올 때.
   - `card-place-1..4.ogg` — 카드를 플레이 영역에 놓을 때. 한 판에 15번 들리므로 넷을 돌려 씁니다.

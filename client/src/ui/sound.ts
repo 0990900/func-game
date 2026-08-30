@@ -54,7 +54,8 @@ interface Note {
 
 /**
  * Recordings, by cue. Kenney's Casino Audio pack (CC0) — the card sounds most
- * card games are built from.
+ * card games are built from, transcoded from Ogg to AAC. Safari does not decode
+ * Ogg Vorbis, which would have left it with tones and nothing else.
  *
  * Several files per cue so the same card does not land identically fifteen
  * times a game; one is picked at random each time.
@@ -174,12 +175,12 @@ async function preload(ctx: AudioContext): Promise<void> {
   await Promise.all(names.map(async (name) => {
     if (clips.has(name)) return;
     try {
-      const response = await fetch(`${import.meta.env.BASE_URL}sounds/${name}.ogg`);
+      const response = await fetch(`${import.meta.env.BASE_URL}sounds/${name}.m4a`);
       if (!response.ok) return;
       clips.set(name, trim(await ctx.decodeAudioData(await response.arrayBuffer())));
     } catch {
-      // Safari has historically been uneven about Vorbis; the synthesised
-      // fallback covers it rather than the cue going missing.
+      // The synthesised fallback covers a file that will not decode, rather
+      // than the cue going missing.
     }
   }));
 }
