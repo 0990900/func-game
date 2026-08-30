@@ -13,8 +13,9 @@ import { dealIn, killTweens, moveTo, pulse } from './motion.ts';
 import type { Point } from './motion.ts';
 import type { TableTextures } from './assets.ts';
 import { containerMeta, statusName } from '../theme/meta.ts';
-import { palette, toHexNumber } from '../theme/tokens.ts';
-import { containers } from '../../../src/core/cards.ts';
+import { containerColor, palette, toHexNumber, utilityColor, wildcardColor } from '../theme/tokens.ts';
+import { containers, createDeck } from '../../../src/core/cards.ts';
+import { coveredOperations } from '../../../src/core/combos.ts';
 import { isNarrow } from '../ui/viewport.ts';
 import type { Card, ContainerName, PublicState, Reveal } from '../../../src/core/types.ts';
 
@@ -38,6 +39,7 @@ const LINE = toHexNumber(palette.line);
 const MUTED = toHexNumber(palette.muted);
 const TEXT = toHexNumber(palette.text);
 const ACCENT = toHexNumber(palette.accent);
+const EMPTY_SLOT = toHexNumber(palette.line);
 
 export interface TableCallbacks {
   readonly onSelectHand: (card: Card) => void;
@@ -46,13 +48,33 @@ export interface TableCallbacks {
   readonly onCancel: () => void;
 }
 
-interface ChipGroup {
-  readonly key: string;
-  readonly label: string;
-  readonly order: number;
-  readonly tint: number;
-  /** Card text to how many of it the player holds. */
-  readonly entries: Map<string, number>;
+/**
+ * The operations each container can hold, in the order they are wanted: the
+ * base ladder to Monad first, then that container's specials. Derived from the
+ * deck rather than restated, so a card added to the rules gets a slot here.
+ */
+const CONTAINER_SLOTS: Record<string, string[]> = (() => {
+  const ladder = ['map', 'ap', 'pure', 'chain'];
+  const deck = createDeck();
+  const slots: Record<string, string[]> = {};
+  for (const container of containers) {
+    const present = [...new Set(
+      deck
+        .filter((card) => card.kind === 'container-function' && card.container === container)
+        .map((card) => card.operation),
+    )];
+    slots[container] = [
+      ...ladder.filter((operation) => present.includes(operation)),
+      ...present.filter((operation) => !ladder.includes(operation)).sort(),
+    ];
+  }
+  return slots;
+})();
+
+/** One cell of a container's slot row. */
+interface SlotCell {
+  readonly text: string;
+  readonly state: 'owned' | 'covered' | 'empty';
 }
 
 export interface TableInput {
@@ -445,7 +467,7 @@ export class TableScene {
         this.areaLayer.addChild(empty);
         y += CHIP_HEIGHT;
       } else {
-        y = this.layoutChips(player.playArea, y);
+        y = this.layoutChips(player.playArea, y, isMe);
       }
       y += GAP;
     }
@@ -488,55 +510,7 @@ export class TableScene {
     }
   }
 
-  /**
-   * A play area, as one row per container.
-   *
-   * Cards are grouped under the container they belong to and duplicates are
-   * counted rather than drawn twice, so a row reads as "what this player has
-   * for Maybe" instead of a wall of repeated names. Naming the container once
-   * on the left also shortens every chip: `Maybe.chain` becomes `chain`.
-   */
-  private groupChips(cards: readonly Card[]): ChipGroup[] {
-    const groups = new Map<string, ChipGroup>();
-
-    const groupOf = (card: Card): { key: string; label: string; order: number } => {
-      if (card.kind === 'utility') {
-        return { key: 'utility', label: 'λ Utility', order: containers.length + 1 };
-      }
-      if (card.container === '*') {
-        return { key: 'joker', label: '✦ 조커', order: containers.length };
-      }
-      const name = card.container as ContainerName;
-      const index = containers.indexOf(name);
-      return {
-        key: name,
-        label: `${containerMeta[name]?.symbol ?? ''} ${name}`,
-        order: index < 0 ? containers.length : index,
-      };
-    };
-
-    for (const card of cards) {
-      const { key, label, order } = groupOf(card);
-      let group = groups.get(key);
-      if (!group) {
-        group = { key, label, order, tint: cardColor(card), entries: new Map() };
-        groups.set(key, group);
-      }
-      // The group already names the container, so the chip only carries what
-      // differs inside it. A container wildcard is a bare star: the deck uses
-      // that notation throughout, so it needs no gloss.
-      const text = card.kind === 'container-wildcard'
-        ? '*'
-        : card.kind === 'container-function' || card.kind === 'utility'
-          ? card.operation
-          : card.label;
-      group.entries.set(text, (group.entries.get(text) ?? 0) + 1);
-    }
-
-    return [...groups.values()].sort((a, b) => a.order - b.order);
-  }
-
-  private layoutChips(cards: readonly Card[], startY: number): number {
+  private layoutChips(cards: readonly Card[], startY: number, own: boolean): number {
     const contentLeft = PAD + GROUP_LABEL_WIDTH + CHIP_GAP;
     const available = this.width - PAD - contentLeft;
     const columns = Math.max(1, Math.floor((available + CHIP_GAP) / (CHIP_COLUMN + CHIP_GAP)));
@@ -544,38 +518,92 @@ export class TableScene {
 
     let y = startY;
 
-    for (const group of this.groupChips(cards)) {
-      const label = body(group.label, 12, group.tint);
-      label.position.set(PAD, y + 5);
-      this.areaLayer.addChild(label);
+    const row = (label: string, tint: number, cells: readonly SlotCell[]): void => {
+      const heading = body(label, 12, tint);
+      heading.position.set(PAD, y + 5);
+      this.areaLayer.addChild(heading);
 
-      let column = 0;
-      for (const [text, count] of [...group.entries].sort((a, b) => a[0].localeCompare(b[0]))) {
-        if (column >= columns) {
-          column = 0;
-          y += CHIP_HEIGHT;
-        }
+      cells.forEach((cell, index) => {
+        if (index > 0 && index % columns === 0) y += CHIP_HEIGHT;
+        const x = contentLeft + (index % columns) * (columnWidth + CHIP_GAP);
 
-        const x = contentLeft + column * (columnWidth + CHIP_GAP);
+        // Owned reads as the container's colour; a slot a wildcard is standing
+        // in for is marked with a star, since the card doing the work is not
+        // this operation; a slot still missing stays grey. So a play area shows
+        // what is left to find, not only what is there.
+        const owned = cell.state === 'owned';
+        const covered = cell.state === 'covered';
+        const colour = owned || covered ? tint : EMPTY_SLOT;
+
         const box = new Graphics()
           .roundRect(x, y, columnWidth, 24, 3)
-          .fill({ color: group.tint, alpha: 0.08 })
-          .stroke({ width: 1, color: group.tint });
+          .fill({ color: owned || covered ? tint : 0x000000, alpha: owned ? 0.16 : covered ? 0.05 : 0.14 })
+          .stroke({ width: 1, color: colour, alpha: owned ? 1 : covered ? 0.8 : 0.45 });
 
-        // Every chip is the same width and every row holds the same number.
-        // A label that will not fit is shrunk to fit rather than being given a
-        // wider box — a grid whose cells vary is not a grid.
-        const chip = body(count > 1 ? `${text} ×${count}` : text, 12);
+        // Every chip is the same width and every row holds the same number; a
+        // label that will not fit is shrunk, never given a wider box.
+        const chip = body(covered ? `✦ ${cell.text}` : cell.text, 12, colour);
+        chip.alpha = owned ? 1 : covered ? 0.9 : 0.6;
         const room = columnWidth - 12;
         if (chip.width > room) chip.scale.set(Math.max(0.68, room / chip.width));
         chip.position.set(x + Math.round((columnWidth - chip.width * chip.scale.x) / 2), y + 5);
 
         this.areaLayer.addChild(box, chip);
-        column += 1;
-      }
+      });
 
       y += CHIP_HEIGHT;
+    };
+
+    // Containers keep their full set of slots so the gaps are visible. An
+    // opponent only shows a container they have started, or three empty grids
+    // would say nothing while costing the room to say it.
+    for (const container of containers) {
+      const slots = CONTAINER_SLOTS[container] ?? [];
+      const counts = new Map<string, number>();
+      for (const card of cards) {
+        if (card.kind === 'container-function' && card.container === container) {
+          counts.set(card.operation, (counts.get(card.operation) ?? 0) + 1);
+        }
+      }
+      if (!own && counts.size === 0) continue;
+
+      const covered = coveredOperations(cards, container, slots);
+      row(
+        `${containerMeta[container]?.symbol ?? ''} ${container}`,
+        toHexNumber(containerColor[container]),
+        slots.map((operation) => {
+          const count = counts.get(operation) ?? 0;
+          if (count > 0) {
+            return { text: count > 1 ? `${operation} ×${count}` : operation, state: 'owned' as const };
+          }
+          return { text: operation, state: covered.has(operation) ? 'covered' as const : 'empty' as const };
+        }),
+      );
     }
+
+    // Wildcards and utilities have no fixed set — a player holds whichever they
+    // drafted — so these rows still list only what is there.
+    for (const [key, label] of [['joker', '✦ 조커'], ['utility', 'λ Utility']] as const) {
+      const held = new Map<string, number>();
+      for (const card of cards) {
+        const isJoker = card.kind === 'wildcard' || card.kind === 'operation-wildcard'
+          || card.kind === 'container-wildcard';
+        if (key === 'joker' ? !isJoker : card.kind !== 'utility') continue;
+        const text = card.kind === 'utility' ? card.operation : card.label;
+        held.set(text, (held.get(text) ?? 0) + 1);
+      }
+      if (held.size === 0) continue;
+
+      row(
+        label,
+        toHexNumber(key === 'utility' ? utilityColor : wildcardColor),
+        [...held].sort((a, b) => a[0].localeCompare(b[0])).map(([text, count]) => ({
+          text: count > 1 ? `${text} ×${count}` : text,
+          state: 'owned' as const,
+        })),
+      );
+    }
+
     return y;
   }
 }
