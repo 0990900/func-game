@@ -14,11 +14,15 @@ import type { Point } from './motion.ts';
 import type { TableTextures } from './assets.ts';
 import { cardFace, statusName } from '../theme/meta.ts';
 import { palette, toHexNumber } from '../theme/tokens.ts';
+import { containers } from '../../../src/core/cards.ts';
 import { isNarrow } from '../ui/viewport.ts';
-import type { Card, PublicState, Reveal } from '../../../src/core/types.ts';
+import type { Card, ContainerName, PublicState, Reveal } from '../../../src/core/types.ts';
 
 const GAP = 12;
 const PAD = 16;
+/** Chips snap to a column grid so their left edges line up down the rows. */
+const CHIP_GAP = 6;
+const CHIP_COLUMN = 96;
 /** A full hand. Cards shrink a little to keep it on one row when they nearly fit. */
 const HAND_SIZE = 5;
 /** Narrowest a fanned card's visible strip may get and still show its emblem. */
@@ -471,28 +475,65 @@ export class TableScene {
     }
   }
 
+  /**
+   * Play areas are read to judge what someone is building, so the cards are
+   * grouped by container rather than left in the order they were played — the
+   * order carries no meaning and the grouping is the whole question.
+   */
+  private sortedChips(cards: readonly Card[]): Card[] {
+    const rank = (card: Card): number => {
+      if (card.kind === 'utility') return containers.length + 1;
+      if (card.kind.includes('wildcard') && card.container === '*') return containers.length;
+      const index = containers.indexOf(card.container as ContainerName);
+      return index < 0 ? containers.length : index;
+    };
+    return [...cards].sort((a, b) => rank(a) - rank(b) || a.label.localeCompare(b.label));
+  }
+
+  /**
+   * Chips sit on a column grid: each one takes whole columns, so left edges
+   * line up down the rows instead of drifting with the length of every label.
+   */
   private layoutChips(cards: readonly Card[], startY: number): number {
-    let x = PAD;
+    const available = this.width - PAD * 2;
+    const columns = Math.max(1, Math.floor((available + CHIP_GAP) / (CHIP_COLUMN + CHIP_GAP)));
+    const columnWidth = Math.floor((available - (columns - 1) * CHIP_GAP) / columns);
+
+    let column = 0;
     let y = startY;
 
-    for (const card of cards) {
+    for (const card of this.sortedChips(cards)) {
       const face = cardFace(card);
       const tint = cardColor(card);
       const text = body(`${face.containerSymbol} ${card.label}`, 12);
-      const width = text.width + 18;
+      // n columns hold n*columnWidth + (n-1)*gap, so the gap has to be added to
+      // the requirement before dividing — otherwise a label that needs a few
+      // pixels more than one column is given one and clipped.
+      const needed = text.width + 18;
+      const span = Math.min(
+        columns,
+        Math.max(1, Math.ceil((needed + CHIP_GAP) / (columnWidth + CHIP_GAP))),
+      );
 
-      if (x + width > this.width - PAD) {
-        x = PAD;
+      if (column + span > columns) {
+        column = 0;
         y += CHIP_HEIGHT;
       }
+
+      const x = PAD + column * (columnWidth + CHIP_GAP);
+      const width = span * columnWidth + (span - 1) * CHIP_GAP;
 
       const chip = new Graphics()
         .roundRect(x, y, width, 24, 3)
         .fill({ color: tint, alpha: 0.08 })
         .stroke({ width: 1, color: tint });
+      // Clip the label to its chip so a long name cannot spill into the next.
       text.position.set(x + 9, y + 5);
-      this.areaLayer.addChild(chip, text);
-      x += width + 8;
+      const clip = new Graphics().rect(x, y, width - 6, 24).fill(0xffffff);
+      text.mask = clip;
+
+      this.areaLayer.addChild(chip, clip, text);
+      column += span;
     }
     return y + CHIP_HEIGHT;
   }
