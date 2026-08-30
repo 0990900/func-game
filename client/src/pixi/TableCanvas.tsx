@@ -11,13 +11,9 @@ import { TableScene } from './TableScene.ts';
 import { loadTableTextures, waitForFonts } from './assets.ts';
 import { actions, gameStore } from '../store/gameStore.ts';
 import { palette, toHexNumber } from '../theme/tokens.ts';
-import { scrollPageTo, stickyClearance } from '../ui/scroll.ts';
 
-/** Brings the market row into view — the next step once a hand card is chosen. */
-function revealMarket(host: HTMLElement, marketTop: number): void {
-  const top = host.getBoundingClientRect().top + window.scrollY + marketTop;
-  scrollPageTo(top - stickyClearance());
-}
+/** Movement past this is a scroll, not a tap. */
+const DRAG_THRESHOLD = 8;
 
 export function TableCanvas() {
   const hostRef = useRef<HTMLDivElement>(null);
@@ -32,6 +28,7 @@ export function TableCanvas() {
     let scene: TableScene | null = null;
     let unsubscribe: (() => void) | null = null;
     let observer: ResizeObserver | null = null;
+    let detachDrag: (() => void) | null = null;
 
     const start = async (): Promise<void> => {
       const created = new Application();
@@ -56,10 +53,10 @@ export function TableCanvas() {
       // The canvas must never widen the document; it fills its column instead.
       created.canvas.style.width = '100%';
       created.canvas.style.display = 'block';
-      // Pixi sets touch-action:none, which suits a game that owns the whole
-      // screen. Here the table is a tall element inside a scrolling page, so
-      // blocking pans left nowhere to drag. Taps still reach the cards.
-      created.canvas.style.touchAction = 'pan-y';
+      // The table owns its row of the grid rather than sitting in a scrolling
+      // page, so it handles pans itself. touch-action has to be settled before
+      // a gesture begins, which is why it is set once here and never toggled.
+      created.canvas.style.touchAction = 'none';
 
       await waitForFonts();
       const textures = await loadTableTextures();
@@ -75,17 +72,59 @@ export function TableCanvas() {
       const draw = (): void => {
         const { state, selectedCardId, selectedMarketId, previewCardId } = gameStore.getState();
         if (!state || !scene || !app) return;
-        const height = scene.update({ state, selectedCardId, selectedMarketId, previewCardId });
-        app.renderer.resize(host.clientWidth || 640, height);
+        const content = scene.update({ state, selectedCardId, selectedMarketId, previewCardId });
+        // The canvas fills its grid row; the scene scrolls inside it when the
+        // content is taller, so the page itself never grows.
+        const available = host.clientHeight || content;
+        scene.setViewport(host.clientWidth || 640, available, content);
+        app.renderer.resize(host.clientWidth || 640, available);
 
-        // On a narrow screen the market sits far below the hand, so choosing a
-        // card would otherwise leave the next step off-screen.
-        if (selectedCardId && !lastSelected) revealMarket(host, scene.getMarketTop());
+        if (selectedCardId && !lastSelected) scene.revealMarket();
         lastSelected = selectedCardId;
       };
 
       draw();
       unsubscribe = gameStore.subscribe(draw);
+
+      // Drag to scroll the table. A drag past the threshold suppresses the tap,
+      // so scrolling past a card never picks it up.
+      let dragging = false;
+      let lastY = 0;
+      let travelled = 0;
+
+      const onPointerDown = (event: PointerEvent): void => {
+        dragging = true;
+        travelled = 0;
+        lastY = event.clientY;
+      };
+      const onPointerMove = (event: PointerEvent): void => {
+        if (!dragging || !scene) return;
+        const delta = lastY - event.clientY;
+        lastY = event.clientY;
+        travelled += Math.abs(delta);
+        if (travelled > DRAG_THRESHOLD) {
+          scene.scrollBy(delta);
+          created.canvas.classList.add('is-dragging');
+        }
+      };
+      const endDrag = (): void => {
+        dragging = false;
+        // Cleared on the next frame so the click that follows this pointerup
+        // still sees that a drag happened.
+        requestAnimationFrame(() => created.canvas.classList.remove('is-dragging'));
+      };
+
+      created.canvas.addEventListener('pointerdown', onPointerDown);
+      created.canvas.addEventListener('pointermove', onPointerMove);
+      created.canvas.addEventListener('pointerup', endDrag);
+      created.canvas.addEventListener('pointercancel', endDrag);
+      detachDrag = () => {
+        created.canvas.removeEventListener('pointerdown', onPointerDown);
+        created.canvas.removeEventListener('pointermove', onPointerMove);
+        created.canvas.removeEventListener('pointerup', endDrag);
+        created.canvas.removeEventListener('pointercancel', endDrag);
+      };
+      scene.setDragged(() => travelled > DRAG_THRESHOLD);
 
       observer = new ResizeObserver(() => {
         if (!scene) return;
@@ -102,6 +141,7 @@ export function TableCanvas() {
 
     return () => {
       disposed = true;
+      detachDrag?.();
       observer?.disconnect();
       unsubscribe?.();
       scene?.destroy();

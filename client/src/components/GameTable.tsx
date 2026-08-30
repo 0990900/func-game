@@ -1,35 +1,24 @@
 /**
- * The table. Cards, market and play areas are drawn by Pixi (TableCanvas);
- * the turn track and the pick confirmation stay DOM because they are text and
- * controls — screen readers and keyboard users need them.
+ * The playing screen: a fixed three-row grid, not a scrolling document.
+ *
+ * status bar / table / dock. Nothing here scrolls — the only vertical scroller
+ * in the app is a sheet's body, which is what keeps a scrolling canvas from
+ * fighting a scrolling page.
+ *
+ * What stays on screen is what a player needs *while deciding*: the turn, their
+ * hand and the market, their own play area, and the secret goal. What is
+ * consulted *between* decisions — the combo reference, scores, the log, an
+ * opponent's full board — is a tap away in a sheet.
  */
+import { useState } from 'react';
 import { TableCanvas } from '../pixi/TableCanvas.tsx';
-import { statusName } from '../theme/meta.ts';
+import { BottomSheet } from './BottomSheet.tsx';
+import { ComboGuide } from './ComboGuide.tsx';
+import { Dock } from './Dock.tsx';
+import type { SheetName } from './Dock.tsx';
+import { eventIcon, scoreSummary, statusName } from '../theme/meta.ts';
 import { actions, useGame } from '../store/gameStore.ts';
-import { scrollPageTo } from '../ui/scroll.ts';
 import type { PublicState } from '../../../src/core/types.ts';
-
-function TurnTrack({ state }: { readonly state: PublicState }) {
-  const byId = new Map(state.players.map((player) => [player.id, player]));
-  return (
-    <div className="turn-track">
-      {state.turnOrder.map((playerId, index) => {
-        const player = byId.get(playerId);
-        if (!player) return null;
-        const isCurrent = state.currentPlayerId === playerId;
-        return (
-          <span key={playerId} style={{ display: 'contents' }}>
-            {index > 0 && <i aria-hidden="true">→</i>}
-            <span className={`turn-player${isCurrent ? ' is-current' : ''}`}>
-              <b>{player.name}</b>
-              <span className="muted">{statusName(player.status)}</span>
-            </span>
-          </span>
-        );
-      })}
-    </div>
-  );
-}
 
 /** A keyboard- and screen-reader-accessible mirror of the canvas hand. */
 function HandFallback({ state }: { readonly state: PublicState }) {
@@ -55,48 +44,90 @@ function HandFallback({ state }: { readonly state: PublicState }) {
   );
 }
 
+function ScoreSheet({ state }: { readonly state: PublicState }) {
+  return (
+    <ul className="score-list">
+      {[...state.players]
+        .sort((a, b) => b.publicScore.total - a.publicScore.total)
+        .map((player) => (
+          <li key={player.id} className={player.id === state.me?.id ? 'is-me' : undefined}>
+            <b>{player.name}{player.bot ? ' (Bot)' : ''}</b>
+            <span className="total">{player.publicScore.total}점</span>
+            <span className="muted">{scoreSummary(player.publicScore)}</span>
+            <span className="chips">
+              {player.playArea.map((card) => (
+                <span key={card.id} className="chip">{card.label}</span>
+              ))}
+              {player.playArea.length === 0 && <span className="muted">아직 없음</span>}
+            </span>
+          </li>
+        ))}
+    </ul>
+  );
+}
+
 export function GameTable({ state }: { readonly state: PublicState }) {
+  const [sheet, setSheet] = useState<SheetName | null>(null);
   const selectedCardId = useGame((s) => s.selectedCardId);
-  const selectedMarketId = useGame((s) => s.selectedMarketId);
-  const myTurn = Boolean(state.me?.isMyTurn);
+  const mySeat = state.players.find((player) => player.id === state.me?.id);
+
+  // Choosing a card is a decision; a panel covering the table would be in the
+  // way. The combo guide is the exception — it is what you consult *to* decide,
+  // so it stays and re-reads the selection instead of closing.
+  if (selectedCardId && sheet && sheet !== 'combos') setSheet(null);
+
+  const goal = state.me?.goal ?? null;
+  const playArea = mySeat?.playArea ?? [];
 
   return (
     <>
-      {/* Round and pick live in the status bar; repeating them here only cost height. */}
-      <div className="turn-board">
-        <span className="eyebrow">턴 순서</span>
-        <TurnTrack state={state} />
-      </div>
-
-      <section className="panel table-panel">
+      <div className="table-area">
         <TableCanvas />
         <HandFallback state={state} />
-      </section>
+      </div>
 
-      {myTurn && selectedCardId && (
-        <section className="panel confirm-panel">
-          <p>
-            {selectedMarketId
-              ? '선택한 손패 카드를 시장에 놓고, 시장 카드를 가져옵니다.'
-              : '선택한 카드를 내 플레이 영역에 놓습니다.'}
-          </p>
-          <div className="actions">
-            <button type="button" onClick={actions.submitPick}>이 카드로 결정</button>
-            <button
-              type="button"
-              className="secondary"
-              onClick={() => {
-                actions.clearPick();
-                // Choosing scrolled down to the market; cancelling undoes that,
-                // so the hand is back where it was picked from.
-                scrollPageTo(0);
-              }}
-            >
-              선택 취소
-            </button>
-          </div>
-        </section>
-      )}
+      <Dock goal={goal} playArea={playArea} openSheet={sheet} onOpenSheet={setSheet} />
+
+      {/* Non-modal: no scrim, the table stays live so cards can be tapped
+          while the reference is open. */}
+      <BottomSheet
+        open={sheet === 'combos'}
+        title="조합 가이드"
+        modal={false}
+        onClose={() => setSheet(null)}
+      >
+        <ComboGuide playArea={playArea} />
+      </BottomSheet>
+
+      <BottomSheet open={sheet === 'goal'} title="내 비밀 목표" onClose={() => setSheet(null)}>
+        {goal ? (
+          <>
+            <b className="goal-name">{goal.name}</b>
+            <p>{goal.text}</p>
+            <p className="muted">달성하면 게임 종료 시 +{goal.score}점. 나만 볼 수 있습니다.</p>
+          </>
+        ) : (
+          <p className="muted">아직 목표를 선택하지 않았습니다.</p>
+        )}
+      </BottomSheet>
+
+      <BottomSheet open={sheet === 'score'} title="점수와 플레이 영역" onClose={() => setSheet(null)}>
+        <p className="muted">공개 점수입니다. 비밀 목표 점수는 게임이 끝나야 더해집니다.</p>
+        <ScoreSheet state={state} />
+      </BottomSheet>
+
+      <BottomSheet open={sheet === 'log'} title="진행 기록" onClose={() => setSheet(null)}>
+        <ul className="event-log">
+          {state.events.map((event) => (
+            <li key={event.id}>
+              <span aria-hidden="true">{eventIcon(event.type)}</span>
+              {event.message}
+            </li>
+          ))}
+        </ul>
+      </BottomSheet>
     </>
   );
 }
+
+export { statusName };

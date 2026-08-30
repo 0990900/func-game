@@ -83,6 +83,12 @@ export class TableScene {
   private marketTop = 0;
   /** Card geometry the cached sprites were built at. */
   private geometryKey = '';
+  /** Visible height of the canvas, and how tall the laid-out table is. */
+  private viewportHeight = 0;
+  private contentHeight = 0;
+  private scrollY = 0;
+  /** Asks the host whether the pointer has been dragged, so a scroll is not a tap. */
+  private wasDragged: () => boolean = () => false;
 
   constructor(app: Application, textures: TableTextures, callbacks: TableCallbacks, width: number) {
     this.textures = textures;
@@ -100,6 +106,40 @@ export class TableScene {
   resize(width: number): void {
     this.width = width;
     if (this.background instanceof TilingSprite) this.background.width = width;
+  }
+
+  /**
+   * The table owns a fixed row of the screen now, so when it is taller than
+   * that row it scrolls itself rather than growing the page. This is the only
+   * place the offset is applied, so nothing else has to know about it.
+   */
+  setViewport(width: number, viewportHeight: number, contentHeight: number): void {
+    this.width = width;
+    this.viewportHeight = viewportHeight;
+    this.contentHeight = contentHeight;
+    this.clampScroll();
+  }
+
+  setDragged(wasDragged: () => boolean): void {
+    this.wasDragged = wasDragged;
+  }
+
+  /** Scrolls the table by a drag, in pixels. */
+  scrollBy(delta: number): void {
+    this.scrollY += delta;
+    this.clampScroll();
+  }
+
+  /** Brings the market row to the top of the visible area. */
+  revealMarket(): void {
+    this.scrollY = this.marketTop - PAD;
+    this.clampScroll();
+  }
+
+  private clampScroll(): void {
+    const overflow = Math.max(0, this.contentHeight - this.viewportHeight);
+    this.scrollY = Math.max(0, Math.min(overflow, this.scrollY));
+    this.root.y = -this.scrollY;
   }
 
   /** Where the market row starts, in canvas pixels. */
@@ -192,10 +232,13 @@ export class TableScene {
       this.lastSeen.delete(id);
     }
 
+    // The table may be shorter than the row it sits in; the background still
+    // covers the whole row so the felt does not stop mid-screen.
     const height = y + PAD;
-    if (this.background instanceof TilingSprite) this.background.height = height;
+    const painted = Math.max(height, this.viewportHeight);
+    if (this.background instanceof TilingSprite) this.background.height = painted;
     else {
-      this.background.clear().rect(0, 0, this.width, height).fill(toHexNumber(palette.bg));
+      this.background.clear().rect(0, 0, this.width, painted).fill(toHexNumber(palette.bg));
     }
     return height;
   }
@@ -211,6 +254,7 @@ export class TableScene {
       metrics: metricsFor(this.width),
       width: this.cardWidth(),
     });
+    sprite.suppressed = () => this.wasDragged();
     this.sprites.set(card.id, sprite);
     return sprite;
   }

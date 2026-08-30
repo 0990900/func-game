@@ -73,6 +73,8 @@ export class CardSprite extends Container {
   private readonly metrics: CardMetrics;
 
   readonly cardWidth: number;
+  /** Set by the scene so a drag can cancel the tap it ends with. */
+  suppressed: () => boolean = () => false;
 
   constructor({ card, emblem, onTap, metrics = ROOMY, width = CARD_WIDTH }: CardSpriteOptions) {
     super();
@@ -141,7 +143,10 @@ export class CardSprite extends Container {
     if (onTap) {
       this.eventMode = 'static';
       this.cursor = 'pointer';
-      this.on('pointertap', () => { if (this.enabled) onTap(card); });
+      this.on('pointertap', () => {
+        // A tap that was really the end of a scroll must not choose a card.
+        if (this.enabled && !this.suppressed()) onTap(card);
+      });
     }
   }
 

@@ -56,8 +56,7 @@ function ComboRow({ row }: { readonly row: Row }) {
 
 export function ComboGuide({ playArea }: { readonly playArea: readonly Card[] }) {
   return (
-    <section className="panel">
-      <h2>조합 진행</h2>
+    <div className="combo-guide">
       <p className="muted">
         컨테이너마다 기본 단계는 가장 높은 하나만 점수가 됩니다. 특수 조합은 따로 더해집니다.
       </p>
@@ -74,6 +73,6 @@ export function ComboGuide({ playArea }: { readonly playArea: readonly Card[] })
           </div>
         );
       })}
-    </section>
+    </div>
   );
 }

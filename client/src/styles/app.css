@@ -264,3 +264,117 @@ main.my-turn .statusbar { box-shadow: 0 0 0 2px rgba(244, 201, 93, .2), 0 8px 24
   position: absolute; width: 1px; height: 1px; margin: -1px;
   padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap;
 }
+
+
+/* Playing screen ---------------------------------------------------------- */
+/*
+ * While drafting the app stops being a document. main becomes a viewport-height
+ * grid — status / table / dock — and nothing in it scrolls. The one vertical
+ * scroller left in the app is a sheet body, which is what keeps a scrolling
+ * canvas from fighting a scrolling page.
+ */
+main.is-drafting {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  height: 100dvh;
+  padding: 0;
+  gap: 0;
+  overflow: hidden;
+}
+main.is-drafting > header { display: none; }
+main.is-drafting .statusbar { position: static; margin: 0; border-width: 0 0 1px; }
+/* The canvas fills the row instead of the row fitting the canvas — otherwise
+   the host measures the canvas's own height and they deadlock at the initial
+   size. */
+main.is-drafting .table-area { position: relative; min-height: 0; overflow: hidden; }
+main.is-drafting .table-canvas { position: absolute; inset: 0; }
+
+.turn-dots { display: flex; gap: 5px; }
+.turn-dot {
+  display: grid; place-items: center; min-width: 26px; height: 26px; padding: 0 5px;
+  border: 1px solid var(--line); border-radius: 999px;
+  color: var(--muted); font-size: 11px; font-weight: 800;
+}
+.turn-dot.is-me { border-color: #52627a; color: var(--text); }
+.turn-dot.is-current { border-color: var(--accent); background: var(--accent); color: var(--accent-dark); }
+
+/* Dock -------------------------------------------------------------------- */
+.dock {
+  display: grid; gap: 6px;
+  padding: 8px 12px calc(8px + env(safe-area-inset-bottom));
+  border-top: 1px solid #4a4024; background: rgba(20, 17, 9, .97);
+}
+
+.goal-chip {
+  display: flex; align-items: center; gap: var(--space-2); width: 100%;
+  min-height: 34px; padding: 0 10px; border: 1px solid #5b4c24; border-radius: 6px;
+  background: #14120a; color: var(--text); font-size: 13px; font-weight: 700; text-align: left;
+}
+.goal-chip.is-met { border-color: var(--accent); background: #29230f; }
+.goal-chip b { color: var(--accent); }
+.goal-chip-progress { margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; }
+.goal-chip-met { color: var(--accent); font-weight: 900; }
+
+.dock-triggers { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.dock-trigger {
+  display: grid; place-items: center; gap: 1px; min-height: 46px; padding: 0;
+  border: 1px solid var(--line); background: var(--surface-2); color: var(--muted);
+  font-size: 11px; font-weight: 800;
+}
+.dock-trigger > span { font-size: 15px; }
+.dock-trigger.is-open { border-color: var(--accent); background: #29230f; color: var(--accent); }
+
+.dock-confirm { display: grid; gap: 6px; }
+.dock-confirm p { margin: 0; color: var(--muted); font-size: 12px; }
+.dock-actions { display: grid; grid-template-columns: 1fr auto; gap: 6px; }
+.dock-actions button { min-height: 46px; }
+
+/* Bottom sheets ----------------------------------------------------------- */
+.sheet-scrim { position: fixed; inset: 0; z-index: 30; background: rgba(4, 7, 11, .6); }
+.sheet {
+  position: fixed; z-index: 31; left: 0; right: 0; bottom: 0;
+  display: grid; grid-template-rows: auto 1fr;
+  /* Material caps a modal sheet's opening height at half the screen. */
+  max-height: 62dvh;
+  border-top: 1px solid var(--line);
+  background: var(--surface); box-shadow: 0 -18px 42px rgba(0, 0, 0, .5);
+}
+.sheet--standard { z-index: 29; box-shadow: 0 -10px 24px rgba(0, 0, 0, .4); max-height: 48dvh; }
+.sheet-head {
+  display: grid; grid-template-columns: 1fr auto; align-items: center; gap: var(--space-2);
+  padding: 6px var(--space-4) var(--space-2); border-bottom: 1px solid var(--line);
+}
+.sheet-head h2 { margin: 0; font-size: 16px; }
+/* A real button, not just a grabber: a swipe-only sheet excludes keyboard and
+   switch users. */
+.sheet-handle {
+  grid-column: 1 / -1; justify-self: center;
+  width: 40px; height: 4px; min-height: 4px; padding: 0; margin-bottom: 6px;
+  border: 0; border-radius: 999px; background: #46566a;
+}
+.sheet-close { min-height: 34px; padding: 0 12px; font-size: 13px; }
+/* The app's only scroller; contain stops a rubber-band from moving the page. */
+.sheet-body { overflow-y: auto; overscroll-behavior: contain; padding: var(--space-4); }
+.sheet-body .panel { margin: 0; border: 0; padding: 0; box-shadow: none; background: none; }
+
+@media (min-width: 761px) {
+  /* A wide screen has room to keep the reference open beside the table, so it
+     stops being a sheet: the table narrows instead of being covered. */
+  main.is-drafting { grid-template-columns: minmax(0, 1fr) 380px; grid-template-areas: "status status" "table aside" "dock dock"; }
+  main.is-drafting .statusbar { grid-area: status; }
+  main.is-drafting .table-area { grid-area: table; }
+  main.is-drafting .dock { grid-area: dock; }
+
+  .sheet, .sheet--standard {
+    grid-area: aside; position: static; max-height: none; min-height: 0;
+    border-top: 0; border-left: 1px solid var(--line); box-shadow: none;
+  }
+  .sheet-scrim { display: none; }
+  .sheet-handle { display: none; }
+
+  .dock { grid-template-columns: 1fr auto; align-items: center; }
+  .dock .goal-chip { grid-column: 1; }
+  .dock-triggers, .dock-confirm { grid-column: 2; }
+  .dock-triggers { grid-template-columns: repeat(4, 92px); }
+  .dock-actions { grid-template-columns: auto auto; }
+}

@@ -4,9 +4,9 @@ import { LobbyScreen } from './LobbyScreen.tsx';
 import { GoalScreen } from './GoalScreen.tsx';
 import { GameTable } from './GameTable.tsx';
 import { FinishedScreen } from './FinishedScreen.tsx';
-import { Hud } from './Hud.tsx';
 import { actions, useGame } from '../store/gameStore.ts';
-import { directionName, phaseName } from '../theme/meta.ts';
+import { directionName, phaseName, statusName } from '../theme/meta.ts';
+import type { PublicState } from '../../../src/core/types.ts';
 
 const connectionLabel: Record<string, string> = {
   idle: '연결 대기',
@@ -45,10 +45,38 @@ function StatusBar() {
       ) : (
         <span className="status-progress"><b>{phaseName(state.phase)}</b></span>
       )}
-      {state.phase !== 'draft' && (
+      {state.phase === 'draft' ? <TurnDots state={state} /> : (
         <span className="status-room">방 <b className="room-code">{roomCode}</b></span>
       )}
     </div>
+  );
+}
+
+/**
+ * Turn order, as four dots. The old track was a horizontally scrolling row of
+ * named cards; who is up is the only part needed at a glance, and the names are
+ * a tap away in the score sheet.
+ */
+function TurnDots({ state }: { readonly state: PublicState }) {
+  const byId = new Map(state.players.map((player) => [player.id, player]));
+  return (
+    <span className="turn-dots" aria-label="턴 순서">
+      {state.turnOrder.map((playerId) => {
+        const player = byId.get(playerId);
+        if (!player) return null;
+        const isCurrent = state.currentPlayerId === playerId;
+        const isMe = playerId === state.me?.id;
+        return (
+          <span
+            key={playerId}
+            className={`turn-dot${isCurrent ? ' is-current' : ''}${isMe ? ' is-me' : ''}`}
+            title={`${player.name} · ${statusName(player.status)}`}
+          >
+            {isMe ? '나' : player.name.replace(/^Bot /, 'B')}
+          </span>
+        );
+      })}
+    </span>
   );
 }
 
@@ -75,9 +103,13 @@ export function App() {
   // Once play starts the title has done its job; it shrinks to give the table
   // back the vertical space, which matters most on a phone.
   const playing = state !== null && state.phase !== 'lobby';
+  const drafting = state?.phase === 'draft';
 
   return (
-    <main className={`${myTurn ? 'my-turn' : ''}${playing ? ' is-playing' : ''}`.trim() || undefined}>
+    <main
+      className={[myTurn && 'my-turn', playing && 'is-playing', drafting && 'is-drafting']
+        .filter(Boolean).join(' ') || undefined}
+    >
       <header>
         <div className="brand">
           <span className="brand-mark" aria-hidden="true">λ</span>
@@ -94,12 +126,7 @@ export function App() {
       {!state && <EntryScreen />}
       {state?.phase === 'lobby' && <LobbyScreen state={state} />}
       {state?.phase === 'goal' && <GoalScreen state={state} />}
-      {state?.phase === 'draft' && (
-        <div className="columns">
-          <div><GameTable state={state} /></div>
-          <div><Hud state={state} /></div>
-        </div>
-      )}
+      {state?.phase === 'draft' && <GameTable state={state} />}
       {state?.phase === 'finished' && <FinishedScreen state={state} />}
 
       <Toasts />
