@@ -953,10 +953,10 @@ export class TableScene {
     // One number for the card as a whole. Per-combo figures cannot be added up
     // — two tiers of the same container do not both pay — so the delta of the
     // actual score is the only total that is true.
-    // Claim points are held at zero on both sides, so the difference is exactly
-    // what the cards are worth. What a claim would pay is a separate matter and
-    // depends on how many finish together.
-    const worth = (playArea: readonly Card[]): number => scorePlayer({ playArea: [...playArea], claimPoints: 0 }).total;
+    // No claims on either side, so the difference is exactly what the cards are
+    // worth. What a claim would pay is a separate matter and depends on how
+    // many finish together.
+    const worth = (playArea: readonly Card[]): number => scorePlayer({ playArea: [...playArea], claimGroups: [] }).total;
     const delta = worth(after) - worth(mine);
     const summary = body(
       delta > 0 ? `이 카드로 공개 점수 +${delta}` : '이 카드로 늘어나는 점수는 없습니다',

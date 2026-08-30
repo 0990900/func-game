@@ -28,16 +28,29 @@ export interface PlayerScore extends ScoreBreakdown {
   readonly combos: readonly Combo[];
 }
 
-export function scorePlayer(player: Pick<Player, 'playArea' | 'claimPoints'>): PlayerScore {
+/**
+ * What one turn's worth of claims pays: the nth combo declared together pays n.
+ *
+ * Finishing several at once is planning — holding `Maybe.ap` back until map,
+ * pure, alt and zero are down completes three tiers on one card — so it is
+ * worth more than finishing the same three apart.
+ */
+export const groupScore = (size: number): number => (size * (size + 1)) / 2;
+
+/** Every claim this player has made, added up. */
+export const claimScore = (groups: ReadonlyArray<readonly string[]>): number =>
+  groups.reduce((sum, group) => sum + groupScore(group.length), 0);
+
+export function scorePlayer(player: Pick<Player, 'playArea' | 'claimGroups'>): PlayerScore {
   const combos = scoringCombos(player.playArea);
   const comboScore = combos.reduce((sum, combo) => sum + combo.score, 0);
   const utilities = scoreUtilities(player.playArea);
-  const claimScore = player.claimPoints;
+  const claims = claimScore(player.claimGroups);
   return {
     combos,
     comboScore,
     utilityScore: utilities.total,
-    claimScore,
-    total: comboScore + utilities.total + claimScore,
+    claimScore: claims,
+    total: comboScore + utilities.total + claims,
   };
 }

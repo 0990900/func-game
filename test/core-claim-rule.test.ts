@@ -9,6 +9,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Either } from 'effect';
 import { claimableCombos, findCombos, isClaimable } from '../src/core/combos.ts';
+import { claimScore, scorePlayer } from '../src/core/scoring.ts';
 import { Command } from '../src/core/commands.ts';
 import { publicState } from '../src/core/public-state.ts';
 import { createTable } from '../src/core/testing.ts';
@@ -82,8 +83,7 @@ test('a wildcard-only combo is built and scored, but never claimed', () => {
     true,
     'it still builds Functor, which still scores',
   );
-  assert.deepEqual(after.claims, [], 'but a joker alone declares nothing');
-  assert.equal(after.claimPoints, 0);
+  assert.deepEqual(after.claimGroups, [], 'but a joker alone declares nothing');
   assert.deepEqual(table.room.claimedCombos, []);
 });
 
@@ -105,13 +105,14 @@ test('finishing several combos on one card pays a rising bonus', () => {
   table.run(Command.pick(me.id, ap.id));
 
   const after = table.room.players[0]!;
+  assert.equal(after.claimGroups.length, 1, 'one card, one group');
   assert.deepEqual(
-    [...after.claims].sort(),
+    [...after.claimGroups[0]!].sort(),
     ['Maybe:Alternative', 'Maybe:Applicative', 'Maybe:Apply'],
     'three combos finished together',
   );
   // The nth combo declared together pays n: 1 + 2 + 3.
-  assert.equal(after.claimPoints, 6);
+  assert.equal(claimScore(after.claimGroups), 6);
 });
 
 test('one at a time pays one at a time', () => {
@@ -126,14 +127,18 @@ test('one at a time pays one at a time', () => {
   const map = exact('Maybe', 'map');
   table.room.drawn = map;
   table.run(Command.pick(me.id, map.id));
-  assert.deepEqual(table.room.players[0]!.claims, ['Maybe:Functor']);
-  assert.equal(table.room.players[0]!.claimPoints, 1);
+  assert.deepEqual(table.room.players[0]!.claimGroups, [['Maybe:Functor']]);
+  assert.equal(claimScore(table.room.players[0]!.claimGroups), 1);
 
   const ap = exact('Maybe', 'ap');
   table.room.currentPlayerIndex = table.room.players.findIndex((p) => p.id === me.id);
   table.room.drawn = ap;
   table.run(Command.pick(table.room.players[0]!.id, ap.id));
-  assert.equal(table.room.players[0]!.claimPoints, 2, 'a second lone claim is worth one more');
+  assert.equal(
+    claimScore(table.room.players[0]!.claimGroups),
+    2,
+    'two groups of one pay one each, not the bonus',
+  );
 });
 
 test('a combo someone else declared is not claimed again', () => {
@@ -146,6 +151,34 @@ test('a combo someone else declared is not claimed again', () => {
   table.room.drawn = map;
   table.run(Command.pick(me.id, map.id));
 
-  assert.deepEqual(table.room.players[0]!.claims, [], 'the point was already taken');
-  assert.equal(table.room.players[0]!.claimPoints, 0);
+  assert.deepEqual(table.room.players[0]!.claimGroups, [], 'the point was already taken');
+});
+
+test('groups accumulate, and the total is readable off them', () => {
+  const table = createTable('A');
+  const me = table.room.players[0]!;
+  table.room.phase = 'draft';
+
+  const play = (card: Card): void => {
+    table.room.deck = [exact('Task', 'chain')];
+    table.room.currentPlayerIndex = table.room.players.findIndex((p) => p.id === me.id);
+    table.room.drawn = card;
+    table.run(Command.pick(me.id, card.id));
+  };
+
+  // Everything Maybe Alternative wants except `ap`, then `ap`: three at once.
+  me.playArea = [exact('Maybe', 'map'), exact('Maybe', 'pure'), exact('Maybe', 'alt'), exact('Maybe', 'zero')];
+  play(exact('Maybe', 'ap'));
+  // Then a lone Either Functor on its own turn.
+  play(exact('Either', 'map'));
+
+  const after = table.room.players[0]!;
+  assert.equal(after.claimGroups.length, 2, 'two turns that finished something');
+  assert.equal(after.claimGroups[0]!.length, 3);
+  assert.deepEqual(after.claimGroups[1], ['Either:Functor']);
+
+  // 6 for the three together, 1 for the one alone — which a flat list of four
+  // keys could not have told apart from 2 + 2 (3 + 3) or 4 at once (10).
+  assert.equal(claimScore(after.claimGroups), 7);
+  assert.equal(scorePlayer(after).claimScore, 7, 'and the score agrees with the groups');
 });

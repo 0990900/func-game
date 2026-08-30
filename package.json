@@ -8,8 +8,10 @@
     "dev": "node --watch src/server/server.js",
     "start:colyseus": "node src/server/colyseus.ts",
     "dev:colyseus": "node --watch src/server/colyseus.ts",
-    "test": "node --test",
-    "typecheck": "tsc --noEmit"
+    "test": "npm run test:core && npm run test:legacy",
+    "typecheck": "tsc --noEmit",
+    "test:core": "node --test \"test/*.test.ts\"",
+    "test:legacy": "node --test \"test/*.test.js\""
   },
   "dependencies": {
     "@colyseus/tools": "^0.18.3",

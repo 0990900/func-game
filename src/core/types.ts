@@ -87,14 +87,16 @@ export interface Player {
   playArea: Card[];
   goalOptions: Goal[];
   goal: Goal | null;
-  /** Claimed combo keys, formatted `Container:Name`. */
-  claims: string[];
   /**
-   * Points earned by claiming. Not `claims.length`: finishing several combos on
-   * one card pays a rising bonus, and how they were grouped cannot be recovered
-   * from a flat list of keys afterwards.
+   * Claimed combo keys, formatted `Container:Name`, grouped by the turn they
+   * were declared on.
+   *
+   * Grouped rather than flat because the bonus depends on it: three combos
+   * finished on one card pay six, three finished apart pay three, and a flat
+   * list cannot tell those apart. Both the claim list and the claim score are
+   * read off this, so neither can drift from it.
    */
-  claimPoints: number;
+  claimGroups: string[][];
   connected: boolean;
 }
 
@@ -163,8 +165,8 @@ export interface FinalScore extends ScoreBreakdown {
   readonly combos: readonly Combo[];
   /** How many different utility operations were held. The score follows from this alone. */
   readonly utilityKinds: number;
-  /** Combos this player declared, in the order they were declared. */
-  readonly claims: readonly string[];
+  /** Combos this player declared, grouped by the turn each group was declared on. */
+  readonly claimGroups: ReadonlyArray<readonly string[]>;
   /** Revealed now that the game is over. Null if the player never chose one. */
   readonly goal: Goal | null;
   readonly goalScore: number;

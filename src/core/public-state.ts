@@ -31,7 +31,7 @@ function finalScores(room: Room): FinalScore[] {
         name: p.name,
         ...base,
         utilityKinds: utilityOperations(p.playArea).size,
-        claims: p.claims,
+        claimGroups: p.claimGroups,
         goal: p.goal,
         goalScore: goal,
         total: base.total + goal,
@@ -84,8 +84,10 @@ function project(
       bot: p.bot,
       connected: p.connected,
       playArea: p.playArea,
-      claimCount: p.claims.length,
-      claims: p.claims,
+      claimCount: p.claimGroups.reduce((sum, group) => sum + group.length, 0),
+      // Flattened for everyone who only needs to know which combos are taken;
+      // the grouping matters to the final breakdown alone.
+      claims: p.claimGroups.flat(),
       cardCount: p.playArea.length,
       status: playerStatus(room, p),
       publicScore: publicScore(p),

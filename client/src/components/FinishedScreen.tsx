@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { ScoreChart } from './ScoreChart.tsx';
 import { containerMeta } from '../theme/meta.ts';
+import { groupScore } from '../../../src/core/scoring.ts';
 import { actions } from '../store/gameStore.ts';
 import { shareResultImage } from '../ui/resultImage.ts';
 import type { FinalScore, PublicState } from '../../../src/core/types.ts';
@@ -107,13 +108,25 @@ function Working({ score }: { readonly score: FinalScore }) {
 
         <dt>Claim {score.claimScore}점</dt>
         <dd>
-          {score.claims.length === 0 ? '선언한 조합이 없습니다.' : (
+          {score.claimGroups.length === 0 ? '선언한 조합이 없습니다.' : (
             <>
-              <span className="working-claims">
-                {score.claims.map((key) => <span key={key} className="chip">{key.replace(':', ' ')}</span>)}
-              </span>
+              {/* One row per card that finished something. The bonus is a
+                  property of the grouping, so the grouping is what is shown —
+                  a flat list of keys could not explain the number above. */}
+              <ul className="working-list">
+                {score.claimGroups.map((group, index) => (
+                  <li key={`${index}:${group.join()}`}>
+                    <span className="working-claims">
+                      {group.map((key) => (
+                        <span key={key} className="chip">{key.replace(':', ' ')}</span>
+                      ))}
+                    </span>
+                    <b>{groupScore(group.length)}</b>
+                  </li>
+                ))}
+              </ul>
               <p className="muted">
-                한 카드로 여러 개를 동시에 완성하면 n번째는 n점입니다. {score.claims.length}개를 선언해 {score.claimScore}점.
+                한 번에 선언한 것 중 n번째가 n점입니다. 한 장으로 여러 개를 몰아 완성할수록 유리합니다.
               </p>
             </>
           )}

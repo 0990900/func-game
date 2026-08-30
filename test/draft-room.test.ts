@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { setTimeout as delay } from 'node:timers/promises';
 import { boot } from '@colyseus/testing';
-import { Server } from 'colyseus';
+import { Server, matchMaker } from 'colyseus';
 import { WebSocketTransport } from '@colyseus/ws-transport';
 import { DraftRoom } from '../src/server/draft-room.ts';
 import type { PublicState } from '../src/core/types.ts';
@@ -263,5 +263,53 @@ test('DraftRoom runs a game over Colyseus with per-viewer projection', async (t)
     assert.equal(seated[0]!.name, '나중', 'and it belongs to whoever sat in it');
     assert.equal(second.state().me!.id, second.state().hostPlayerId, 'who can start the game');
     assert.equal(watcher.state().players[0]!.name, '나중', 'as everyone else sees it too');
+  });
+
+  await t.test('the lobby is told what the room holds, and when that changes', async () => {
+    const lobby = await colyseus.createRoom<DraftRoom>('draft', { name: '집주인' });
+    watch(await colyseus.connectTo(lobby, { name: '집주인' }));
+    await delay(SETTLE);
+
+    const look = async (): Promise<Record<string, unknown>> => {
+      const [found] = await matchMaker.query({ roomId: lobby.roomId });
+      return (found?.metadata ?? {}) as Record<string, unknown>;
+    };
+
+    assert.deepEqual(
+      { ...(await look()) },
+      { host: '집주인', phase: 'lobby', humans: 1, seats: 1, observers: 0 },
+    );
+
+    const watcher = watch(await colyseus.connectTo(lobby, { name: '구경', observe: true }));
+    await delay(SETTLE);
+    assert.equal((await look())['observers'], 1, 'a watcher is counted as they arrive');
+    assert.equal((await look())['humans'], 1, 'and never as a player');
+
+    // Leaving has to put it back, or the lobby overstates the room forever.
+    await watcher.room.leave(true);
+    await delay(SETTLE);
+    assert.equal((await look())['observers'], 0);
+
+    watch(await colyseus.connectTo(lobby, { name: '둘째' }));
+    await delay(SETTLE);
+    assert.equal((await look())['humans'], 2);
+    assert.equal((await look())['seats'], 2);
+  });
+
+  await t.test('an idle timer is dropped when the room goes away', async () => {
+    const doomed = await colyseus.createRoom<DraftRoom>('draft', { name: '잠깐' });
+    const seat = watch(await colyseus.connectTo(doomed, { name: '잠깐' }));
+    await delay(SETTLE);
+
+    seat.room.send('start_game');
+    await delay(SETTLE);
+    seat.room.send('choose_goal', { goalId: seat.state().me!.goalOptions[0]!.id });
+    await delay(SETTLE);
+    assert.equal(seat.state().phase, 'draft', 'a timer is running');
+
+    // Nothing should be left ticking against a disposed room.
+    await seat.room.leave(true);
+    await doomed.disconnect();
+    await delay(BOT_WINDOW);
   });
 });

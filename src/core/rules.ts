@@ -9,7 +9,7 @@
  * rules here; corrections belong in a separate, tested change.
  */
 import { createDeck } from './cards.ts';
-import { scorePlayer } from './scoring.ts';
+import { groupScore, scorePlayer } from './scoring.ts';
 import { claimableCombos, comboKey, findCombos, isClaimable } from './combos.ts';
 import { goals } from './goals.ts';
 import { ruleError } from './errors.ts';
@@ -66,8 +66,7 @@ export function createPlayer(deps: RuleDeps, name: string | null | undefined, bo
     playArea: [],
     goalOptions: [],
     goal: null,
-    claims: [],
-    claimPoints: 0,
+    claimGroups: [],
     connected: true,
   };
 }
@@ -133,8 +132,7 @@ export function renamePlayer(deps: RuleDeps, room: Room, playerId: string, name:
   const player = mustPlayer(room, playerId);
   player.name = name?.trim().slice(0, 24) || 'Player';
   player.playArea = [];
-  player.claims = [];
-  player.claimPoints = 0;
+  player.claimGroups = [];
   player.goal = null;
   player.goalOptions = [];
   addEvent(deps, room, 'join', `${player.name}님이 방장이 되었습니다.`, player.id);
@@ -166,8 +164,7 @@ export function restartGame(deps: RuleDeps, room: Room): void {
 
   for (const player of room.players) {
     player.playArea = [];
-    player.claims = [];
-    player.claimPoints = 0;
+    player.claimGroups = [];
     player.goal = null;
     player.goalOptions = [];
   }
@@ -432,13 +429,10 @@ export function actionOrder(room: Room): string[] {
 function awardClaims(deps: RuleDeps, room: Room, player: Player, keys: readonly string[]): void {
   if (keys.length === 0) return;
 
-  keys.forEach((key, index) => {
-    room.claimedCombos.push(key);
-    player.claims.push(key);
-    player.claimPoints += index + 1;
-  });
+  for (const key of keys) room.claimedCombos.push(key);
+  player.claimGroups.push([...keys]);
 
-  const points = (keys.length * (keys.length + 1)) / 2;
+  const points = groupScore(keys.length);
   const names = keys.map((key) => key.replace(':', ' ')).join(', ');
   addEvent(
     deps,

@@ -58,6 +58,9 @@ export function RoomList({
       {rooms.map((room) => {
         const started = room.phase !== 'lobby';
         const full = room.humans >= SEATS;
+        // A disabled button is skipped by keyboard navigation and its `title`
+        // is not reliably announced, so the reason has to be in the name.
+        const why = started ? '이미 시작된 게임' : full ? '자리가 찼습니다' : null;
         return (
           <li key={room.roomId}>
             <span className="room-who">
@@ -74,8 +77,8 @@ export function RoomList({
                 type="button"
                 disabled={busy || started || full}
                 onClick={() => onJoin(room.roomId)}
-                // Why the button is off, rather than leaving it a mystery.
-                title={started ? '이미 시작된 게임입니다' : full ? '자리가 찼습니다' : undefined}
+                aria-label={`${room.host}의 방에 참가${why ? ` · 불가: ${why}` : ''}`}
+                title={why ?? undefined}
               >
                 참가
               </button>
@@ -84,6 +87,7 @@ export function RoomList({
                 className="secondary"
                 disabled={busy}
                 onClick={() => onObserve(room.roomId)}
+                aria-label={`${room.host}의 방 관전${why ? ` · ${why}이지만 관전은 됩니다` : ''}`}
               >
                 관전
               </button>

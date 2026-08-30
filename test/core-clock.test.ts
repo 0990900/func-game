@@ -148,7 +148,7 @@ test('restarting keeps the table and clears the game', () => {
   // And nothing of the last game is left.
   assert.equal(table.room.phase, 'goal');
   assert.equal(table.room.players.every((p) => p.playArea.length === 0), true);
-  assert.equal(table.room.players.every((p) => p.claims.length === 0), true);
+  assert.equal(table.room.players.every((p) => p.claimGroups.length === 0), true);
   assert.deepEqual(table.room.claimedCombos, []);
   assert.equal(table.room.scoreLog.length, 0);
   assert.equal(table.room.market.length, 4);

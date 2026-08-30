@@ -26,13 +26,17 @@ UI에서는 다음 용어를 사용한다.
 | 서버 | `src/server/colyseus.ts`, `draft-room.ts` — Colyseus, 2567 | `src/server/server.js` — 커스텀 ws, 3107 |
 | 클라이언트 | `client/` — React + PixiJS + zustand, Vite | `public/` — 바닐라 DOM |
 
-두 코어는 **규칙이 이미 갈라졌다.** 레거시는 옛 손패 규칙을 그대로 돌린다. 레거시 테스트는 컷오버(마일스톤 G)까지 남겨두되, 규칙 변경은 `src/core/`에만 반영한다.
+두 코어는 **규칙이 이미 갈라졌다.** 레거시는 옛 손패 규칙과 수동 Claim(`pendingClaim`)을 그대로 돌린다. 규칙 변경은 `src/core/`에만 반영한다.
+
+**`npm test`의 녹색은 신규 코어의 증거가 아니다.** 레거시 테스트는 이미 제거된 동작(턴을 멈추는 Claim 선택 등)을 여전히 통과시킨다. 신규 동작을 확인할 때는 반드시 `npm run test:core`를 본다. 레거시 스위트는 컷오버(마일스톤 G)에서 `src/game/`, `public/`과 함께 삭제한다.
 
 ## 작업 시작 절차
 
 ```bash
 npm install
-npm test                  # 신규 TS + 레거시 JS 테스트 모두
+npm run test:core         # 신규 코어·서버 (test/*.test.ts) — 실제 검증 대상
+npm run test:legacy       # 레거시 (test/*.test.js) — 컷오버까지 유지되는 카나리아
+npm test                  # 둘 다
 npm run typecheck         # 서버·코어
 npm run start:colyseus    # 신규 서버 (2567)
 cd client && npm run dev  # Vite 개발 서버
