@@ -6,7 +6,7 @@
  * impossible. Keeping identity is what lets milestone E tween a card from where
  * it was to where it now belongs.
  */
-import { Application, Container, Graphics, Text, TilingSprite } from 'pixi.js';
+import { Application, Container, Graphics, Rectangle, Text, TilingSprite } from 'pixi.js';
 import { CARD_WIDTH, MIN_CARD_WIDTH, CardSprite, cardColor, metricsFor } from './CardSprite.ts';
 import { EffectLayer } from './effects.ts';
 import { dealIn, killTweens, moveTo, pulse } from './motion.ts';
@@ -39,6 +39,8 @@ export interface TableInput {
   readonly state: PublicState;
   readonly selectedCardId: string | null;
   readonly selectedMarketId: string | null;
+  /** Raised for a look, not yet chosen. Narrow screens only. */
+  readonly previewCardId: string | null;
 }
 
 const heading = (text: string, color = MUTED) =>
@@ -130,7 +132,7 @@ export class TableScene {
   }
 
   /** Rebuilds layout from state, reusing every sprite whose card is still on the table. */
-  update({ state, selectedCardId, selectedMarketId }: TableInput): number {
+  update({ state, selectedCardId, selectedMarketId, previewCardId }: TableInput): number {
     // Sprites bake their size, so a resize that changes card geometry has to
     // rebuild them rather than reuse cards drawn at the old dimensions.
     const geometryKey = `${this.cardWidth()}x${metricsFor(this.width).height}`;
@@ -155,6 +157,7 @@ export class TableScene {
       y,
       seen,
       selectedId: selectedCardId,
+      raisedId: previewCardId,
       enabled: myTurn,
       onTap: this.callbacks.onSelectHand,
       // Held cards overlap; the market stays laid out because it is shared and
@@ -232,12 +235,16 @@ export class TableScene {
     y: number;
     seen: Set<string>;
     selectedId: string | null;
+    /** Lifted above its neighbours to be read, without being chosen. */
+    raisedId?: string | null;
     enabled: boolean;
     onTap: (card: Card) => void;
     /** Overlap the cards like a held hand instead of laying them out in a grid. */
     fan?: boolean;
   }): number {
-    const { layer, title, cards, y, seen, selectedId, enabled, onTap, fan = false } = options;
+    const {
+      layer, title, cards, y, seen, selectedId, raisedId = null, enabled, onTap, fan = false,
+    } = options;
     // Detach only: the card sprites in here are reused and must not be destroyed.
     layer.removeChildren();
 
@@ -264,20 +271,31 @@ export class TableScene {
       sprite.setSelected(card.id === selectedId);
       sprite.setEnabled(enabled);
 
+      // Previewed and chosen cards both come forward; only the chosen one is
+      // outlined, so a look is never mistaken for a decision.
+      const raised = sprite.isSelected() || card.id === raisedId;
+
       const column = index % perRow;
       const row = Math.floor(index / perRow);
-      // A chosen card lifts clear of its neighbours — further when fanned,
+      // A raised card lifts clear of its neighbours — further when fanned,
       // where the lift is what separates it from the cards it overlaps.
-      const lift = sprite.isSelected() ? (fan ? 16 : 5) : 0;
+      const lift = raised ? (fan ? 16 : 5) : 0;
       const target: Point = {
         x: PAD + column * step,
         y: top + row * (cardHeight + GAP) - lift,
       };
       layer.addChild(sprite);
 
-      // Later cards overlap earlier ones, and the chosen card sits above them
-      // all so its hint is readable.
-      if (fan) sprite.zIndex = sprite.isSelected() ? cards.length + 1 : index;
+      if (fan) {
+        // Later cards overlap earlier ones, and a raised card sits above them
+        // all so it can be read whole.
+        sprite.zIndex = raised ? cards.length + 1 : index;
+        // Each card stays tappable at its own slot, even while another is drawn
+        // over it. Without this a raised card swallows the strips of the cards
+        // to its right and they cannot be reached at all.
+        const isLast = index === cards.length - 1;
+        sprite.hitArea = new Rectangle(0, 0, isLast ? cardWidth : step, cardHeight);
+      }
 
       if (!existed) {
         sprite.position.set(target.x, target.y);

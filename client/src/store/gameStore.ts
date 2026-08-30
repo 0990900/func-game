@@ -10,6 +10,7 @@ import { createStore } from 'zustand/vanilla';
 import { useStore } from 'zustand';
 import type { PublicState } from '../../../src/core/types.ts';
 import { createRoom, joinRoom, resumeRoom } from '../net/connection.ts';
+import { isNarrow } from '../ui/scroll.ts';
 import type { GameRoom, Handlers } from '../net/connection.ts';
 
 export type ConnectionPhase = 'idle' | 'connecting' | 'connected' | 'reconnecting' | 'error';
@@ -30,6 +31,12 @@ export interface GameState {
   previousReveal: PublicState['lastReveal'];
   selectedCardId: string | null;
   selectedMarketId: string | null;
+  /**
+   * The hand card raised for a look but not yet chosen. Only used on narrow
+   * screens, where the hand is fanned and most of each card is covered: the
+   * first tap reveals, the second commits.
+   */
+  previewCardId: string | null;
   toasts: Toast[];
   myTurnAnnounced: boolean;
 }
@@ -42,6 +49,7 @@ const initial: GameState = {
   previousReveal: [],
   selectedCardId: null,
   selectedMarketId: null,
+  previewCardId: null,
   toasts: [],
   myTurnAnnounced: false,
 };
@@ -92,6 +100,7 @@ const handlers: Handlers = {
       previousReveal: previous?.lastReveal ?? [],
       selectedCardId: null,
       selectedMarketId: null,
+      previewCardId: null,
       connection: 'connected',
       myTurnAnnounced: becameMyTurn,
     });
@@ -170,14 +179,23 @@ export const actions = {
   finishClaim: () => send('finish_claim'),
 
   selectCard: (cardId: string) =>
-    set((s) => (s.selectedCardId === cardId
-      ? { selectedCardId: null, selectedMarketId: null }
-      : { selectedCardId: cardId })),
+    set((s) => {
+      // Tapping the chosen card again puts it back.
+      if (s.selectedCardId === cardId) {
+        return { selectedCardId: null, selectedMarketId: null, previewCardId: null };
+      }
+      // Wide screens show every card in full, so one tap is enough.
+      if (!isNarrow()) return { selectedCardId: cardId, previewCardId: null };
+      // Narrow: reveal first, commit on the second tap of the same card.
+      return s.previewCardId === cardId
+        ? { selectedCardId: cardId, previewCardId: null }
+        : { previewCardId: cardId, selectedCardId: null, selectedMarketId: null };
+    }),
 
   selectMarket: (cardId: string) =>
     set((s) => (s.selectedMarketId === cardId ? { selectedMarketId: null } : { selectedMarketId: cardId })),
 
-  clearPick: () => set({ selectedCardId: null, selectedMarketId: null }),
+  clearPick: () => set({ selectedCardId: null, selectedMarketId: null, previewCardId: null }),
 
   submitPick: () => {
     const { selectedCardId, selectedMarketId } = get();

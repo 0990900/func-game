@@ -69,9 +69,9 @@ export function TableCanvas() {
       let lastSelected: string | null = null;
 
       const draw = (): void => {
-        const { state, selectedCardId, selectedMarketId } = gameStore.getState();
+        const { state, selectedCardId, selectedMarketId, previewCardId } = gameStore.getState();
         if (!state || !scene || !app) return;
-        const height = scene.update({ state, selectedCardId, selectedMarketId });
+        const height = scene.update({ state, selectedCardId, selectedMarketId, previewCardId });
         app.renderer.resize(host.clientWidth || 640, height);
 
         // On a narrow screen the market sits far below the hand, so choosing a
