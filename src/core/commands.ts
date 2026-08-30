@@ -10,6 +10,7 @@ export type GameCommand =
   | { readonly _tag: 'StartGame'; readonly playerId: string }
   | { readonly _tag: 'RestartGame'; readonly playerId: string }
   | { readonly _tag: 'KickPlayer'; readonly playerId: string; readonly targetId: string }
+  | { readonly _tag: 'RenamePlayer'; readonly playerId: string; readonly name: string }
   | { readonly _tag: 'ChooseGoal'; readonly playerId: string; readonly goalId: string }
   | { readonly _tag: 'Pick'; readonly playerId: string; readonly cardId: string; readonly marketCardId: string | null }
   | { readonly _tag: 'BotTurn'; readonly playerId: string }
@@ -21,6 +22,8 @@ export const Command = {
   restartGame: (playerId: string): GameCommand => ({ _tag: 'RestartGame', playerId }),
   kickPlayer: (playerId: string, targetId: string): GameCommand =>
     ({ _tag: 'KickPlayer', playerId, targetId }),
+  renamePlayer: (playerId: string, name: string): GameCommand =>
+    ({ _tag: 'RenamePlayer', playerId, name }),
   chooseGoal: (playerId: string, goalId: string): GameCommand => ({ _tag: 'ChooseGoal', playerId, goalId }),
   pick: (playerId: string, cardId: string, marketCardId: string | null = null): GameCommand =>
     ({ _tag: 'Pick', playerId, cardId, marketCardId }),
@@ -76,6 +79,9 @@ function apply(deps: RuleDeps, draft: Room, command: GameCommand): Player | null
     case 'KickPlayer':
       if (command.playerId !== draft.hostPlayerId) throw new RuleError({ message: '방장만 내보낼 수 있습니다.' });
       Rules.kickPlayer(deps, draft, command.targetId);
+      return null;
+    case 'RenamePlayer':
+      Rules.renamePlayer(deps, draft, command.playerId, command.name);
       return null;
     case 'ChooseGoal':
       Rules.chooseGoal(deps, draft, command.playerId, command.goalId);

@@ -55,6 +55,12 @@ export interface GameState {
    * Server clock minus this device's, from the last state received. Turn
    * deadlines are stamped on the server, so a device whose clock is off would
    * otherwise run the countdown out early or never.
+   *
+   * It absorbs the one-way trip as well as the skew, since `serverNow` is a
+   * send time measured against a receive time. The countdown therefore runs a
+   * latency late — tens of milliseconds against a thirty-second turn. Fixing it
+   * would mean measuring round trips, which is a protocol for an error smaller
+   * than the tick.
    */
   clockOffset: number;
 }

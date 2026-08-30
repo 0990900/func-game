@@ -243,4 +243,25 @@ test('DraftRoom runs a game over Colyseus with per-viewer projection', async (t)
     assert.equal(second.errors.length, 1, 'only the host may remove anyone');
     assert.equal(host.state().players.length, 2, 'and nobody was removed');
   });
+
+  await t.test('an empty lobby hands the host chair over, not the host', async () => {
+    const lobby = await colyseus.createRoom<DraftRoom>('draft', { name: '먼저' });
+    const first = watch(await colyseus.connectTo(lobby, { name: '먼저' }));
+    // A watcher keeps the room alive once the player has gone.
+    const watcher = watch(await colyseus.connectTo(lobby, { name: '구경', observe: true }));
+    await delay(SETTLE);
+    assert.equal(first.state().players[0]!.name, '먼저');
+
+    await first.room.leave(true);
+    await delay(SETTLE);
+
+    const second = watch(await colyseus.connectTo(lobby, { name: '나중' }));
+    await delay(SETTLE);
+
+    const seated = second.state().players;
+    assert.equal(seated.length, 1, 'the empty chair is reused, not doubled up');
+    assert.equal(seated[0]!.name, '나중', 'and it belongs to whoever sat in it');
+    assert.equal(second.state().me!.id, second.state().hostPlayerId, 'who can start the game');
+    assert.equal(watcher.state().players[0]!.name, '나중', 'as everyone else sees it too');
+  });
 });

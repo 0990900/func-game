@@ -65,6 +65,12 @@ export class DraftRoom extends Room {
   private turnTimerKey: string | null = null;
   /** What the lobby was last told, so an unchanged room is not republished. */
   private metadataKey = '';
+  /**
+   * Metadata writes, in call order. They are fired and not awaited, so two of
+   * them racing could leave an older record as the final one — with the key
+   * already updated, nothing would come along to correct it.
+   */
+  private metadataWrite: Promise<unknown> = Promise.resolve();
 
   private get runtime(): RoomRuntime {
     if (!this.game) throw new Error('room used before onCreate');
@@ -92,11 +98,19 @@ export class DraftRoom extends Room {
     // the moment the last player had left.
     if (options?.observe) {
       // Nothing to do: an observer is a client with no seat.
-    } else if (this.seats.size === 0) {
+    } else if (this.seats.size === 0 && this.runtime.state().phase === 'lobby') {
       // The room is created with its host already seated, so the first player
-      // to arrive takes that seat — the creator, or whoever comes after the
-      // room has emptied out.
-      this.seats.set(client.sessionId, this.runtime.state().hostPlayerId);
+      // to arrive takes that chair — the creator, or whoever comes after the
+      // room has emptied out but observers kept it alive.
+      //
+      // Under their own name. Mapping a new session onto the existing host
+      // Player without renaming it handed the arriving player the previous
+      // host's identity, and their score with it. Restricted to the lobby for
+      // the same reason: mid-game that chair has a board and a place in the
+      // turn order that belong to someone else.
+      const hostId = this.runtime.state().hostPlayerId;
+      await this.runtime.tryRun(Command.renamePlayer(hostId, options?.name ?? 'Player'));
+      this.seats.set(client.sessionId, hostId);
     } else {
       const result = await this.runtime.tryRun(Command.joinRoom(options?.name ?? 'Player'));
       // A full or already-started room is not a reason to turn someone away:
@@ -129,12 +143,17 @@ export class DraftRoom extends Room {
       observers: this.observers.size,
     };
 
-    // This runs on every broadcast, which is every turn. Only four of those
-    // fields ever change, and rarely; republishing the rest is pure churn.
+    // This runs on every broadcast, which is every turn, and the room is
+    // usually the same room it was: republishing an identical record is churn.
     const key = JSON.stringify(metadata);
     if (key === this.metadataKey) return;
     this.metadataKey = key;
-    void this.setMetadata(metadata);
+    this.metadataWrite = this.metadataWrite
+      .then(() => this.setMetadata(metadata))
+      .catch((cause: unknown) => {
+        // The lobby showing a stale room is not worth failing a join over.
+        console.error(`room metadata failed in ${this.roomId}:`, cause);
+      });
   }
 
   /** An unexpected disconnect: hold the seat open for a while. */

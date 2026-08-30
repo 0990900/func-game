@@ -41,7 +41,13 @@ export function bindKeys(): () => void {
       return;
     }
 
-    const index = KEYS.indexOf(event.key as typeof KEYS[number]);
+    // `key` first, then `code`. On a layout where a digit needs Shift the key
+    // is some other character entirely, and what this promises is a position on
+    // the keyboard — the numeral printed on the cards.
+    const byKey = KEYS.indexOf(event.key as typeof KEYS[number]);
+    const index = byKey >= 0
+      ? byKey
+      : KEYS.findIndex((digit) => event.code === `Digit${digit}`);
     if (index < 0 || !state.drawn) return;
     event.preventDefault();
 

@@ -21,6 +21,8 @@ import { eventIcon, scoreSummary, statusName } from '../theme/meta.ts';
 import { actions, useGame } from '../store/gameStore.ts';
 import { useIsNarrow } from '../ui/useIsNarrow.ts';
 import { bindKeys } from '../ui/keyboard.ts';
+import { comboDefinitions, coveredOperations, scoringCombos } from '../../../src/core/combos.ts';
+import { cardBack } from '../theme/signatures.ts';
 import type { Card, PublicState } from '../../../src/core/types.ts';
 
 /**
@@ -62,7 +64,8 @@ function CardButtons({
             disabled={disabled}
             aria-pressed={chosen}
             aria-label={
-              `${card.label}${previewed ? ' · 미리보기 중, 다시 누르면 선택' : ''}`
+              `${card.label} · ${cardBack(card).signature}`
+              + `${previewed ? ' · 미리보기 중, 다시 누르면 선택' : ''}`
               + `${chosen ? ' · 선택됨' : ''}`
             }
             onClick={() => onSelect(card.id)}
@@ -100,7 +103,58 @@ function TableFallback({ state }: { readonly state: PublicState }) {
         disabled={!myTurn || !selectedCardId}
         onSelect={actions.selectMarket}
       />
+      <TypeclassButtons state={state} />
     </>
+  );
+}
+
+/**
+ * The typeclass ladder, for anyone who cannot reach the canvas.
+ *
+ * On the table these are chips you tap to mark the operations a typeclass
+ * needs. That was a canvas-only control, so a keyboard or screen-reader player
+ * could neither read the ladder nor use the one feature the game exists to
+ * teach. Here each is a button that says what it needs and how far this player
+ * has got, which is the same answer the highlight gives visually.
+ */
+function TypeclassButtons({ state }: { readonly state: PublicState }) {
+  const mine = state.players.find((player) => player.id === state.me?.id)?.playArea ?? [];
+  const built = new Set(scoringCombos(mine).map((combo) => `${combo.container}:${combo.name}`));
+  const claimed = new Set(state.players.flatMap((player) => player.claims));
+
+  return (
+    <div className="sr-hand">
+      <h3 className="visually-hidden">타입클래스</h3>
+      {comboDefinitions.map((definition) => {
+        const reached = definition.containers.filter((container) =>
+          built.has(`${container}:${definition.name}`));
+        const taken = definition.containers.filter((container) =>
+          claimed.has(`${container}:${definition.name}`));
+        const missing = definition.containers
+          .map((container) => {
+            const covered = coveredOperations(mine, container, definition.requires);
+            const short = definition.requires.filter((operation) => !covered.has(operation));
+            return short.length === 0 ? `${container} 완성` : `${container} ${short.join(' ')} 필요`;
+          })
+          .join(', ');
+
+        return (
+          <button
+            key={definition.name}
+            type="button"
+            className="sr-card"
+            aria-label={
+              `${definition.name} ${definition.score}점 · 필요 ${definition.requires.join(' ')}`
+              + ` · ${missing}`
+              + `${reached.length ? ` · 확보 ${reached.length}곳` : ''}`
+              + `${taken.length ? ` · Claim됨 ${taken.join(' ')}` : ''}`
+            }
+          >
+            {definition.name}
+          </button>
+        );
+      })}
+    </div>
   );
 }
 

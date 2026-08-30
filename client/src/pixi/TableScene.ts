@@ -234,6 +234,14 @@ export class TableScene {
   /** The last input drawn, so a toggle can repaint without the store. */
   private lastInput: TableInput | null = null;
 
+  /**
+   * The key numerals drawn over the top row. Held so they can be destroyed:
+   * the row detaches its children rather than destroying them, because the
+   * card sprites in it are reused — but these are rebuilt every layout, and
+   * detaching alone leaked five Text objects per update.
+   */
+  private readonly keyHints: Text[] = [];
+
   constructor(app: Application, textures: TableTextures, callbacks: TableCallbacks, width: number) {
     this.textures = textures;
     this.callbacks = callbacks;
@@ -358,6 +366,9 @@ export class TableScene {
     this.sprites.clear();
     this.lastSeen.clear();
     this.rowLabels.clear();
+    // Already destroyed with the tree; emptied so a stale scene cannot be
+    // asked to destroy them a second time.
+    this.keyHints.length = 0;
   }
 
   /** Rebuilds layout from state, reusing every sprite whose card is still on the table. */
@@ -559,8 +570,10 @@ export class TableScene {
       layer, title, left, width, cards, y, seen, selectedIds,
       raisedIds = new Set<string>(), fan = false, faceDown = false, keyHints = false,
     } = options;
-    // Detach only: the card sprites in here are reused and must not be destroyed.
+    // Detach only: the card sprites in here are reused and must not be
+    // destroyed. The hints are not reused, so they are destroyed by hand.
     layer.removeChildren();
+    for (const hint of this.keyHints.splice(0)) hint.destroy();
 
     let label = this.rowLabels.get(layer);
     if (!label) {
@@ -658,6 +671,7 @@ export class TableScene {
         // at the default sat under the card overlapping its own.
         hint.zIndex = cards.length + 2;
         hint.alpha = 0.75;
+        this.keyHints.push(hint);
         layer.addChild(hint);
       }
     });

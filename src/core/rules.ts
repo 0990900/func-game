@@ -120,6 +120,26 @@ export function kickPlayer(deps: RuleDeps, room: Room, playerId: string): void {
   addEvent(deps, room, 'disconnect', `${player.name}님이 방에서 나갔습니다.`, playerId);
 }
 
+/**
+ * Puts a new person in an existing seat, under their own name.
+ *
+ * Only for the host's chair in an empty lobby. Someone has to be able to start
+ * the game, so the chair is reused rather than orphaned — but reusing it
+ * without this handed the arriving player the previous host's name, and would
+ * have handed them a score too had the game ever run.
+ */
+export function renamePlayer(deps: RuleDeps, room: Room, playerId: string, name: string): void {
+  if (room.phase !== 'lobby') throw ruleError('게임이 시작된 뒤에는 이름을 바꿀 수 없습니다.');
+  const player = mustPlayer(room, playerId);
+  player.name = name?.trim().slice(0, 24) || 'Player';
+  player.playArea = [];
+  player.claims = [];
+  player.claimPoints = 0;
+  player.goal = null;
+  player.goalOptions = [];
+  addEvent(deps, room, 'join', `${player.name}님이 방장이 되었습니다.`, player.id);
+}
+
 export function addBotsToFour(deps: RuleDeps, room: Room): void {
   let i = 1;
   while (room.players.length < MAX_PLAYERS) room.players.push(createPlayer(deps, `Bot ${i++}`, true));

@@ -68,7 +68,17 @@ export function pulse(target: { alpha: number }): gsap.core.Tween {
   );
 }
 
-export const killTweens = (target: object): void => { gsap.killTweensOf(target); };
+/**
+ * Stops every tween touching a display object, including the ones aimed at its
+ * parts. `flip` animates `scale`, which `killTweensOf(sprite)` does not reach:
+ * a card turned over as the scene was torn down kept writing to a destroyed
+ * object and held it alive until the timeline ran out.
+ */
+export const killTweens = (target: { scale?: unknown; position?: unknown }): void => {
+  gsap.killTweensOf(target);
+  if (target.scale) gsap.killTweensOf(target.scale);
+  if (target.position) gsap.killTweensOf(target.position);
+};
 
 /**
  * Turns a card over: squash to nothing, swap the side, and open again.
