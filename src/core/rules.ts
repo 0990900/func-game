@@ -23,6 +23,8 @@ import type {
 } from './types.ts';
 
 const MAX_PLAYERS = 4;
+/** Cards each player ends the game with. */
+export const CARDS_PER_PLAYER = 15;
 
 export interface RuleDeps {
   readonly id: (prefix: string) => string;
@@ -43,7 +45,6 @@ export function createPlayer(deps: RuleDeps, name: string | null | undefined, bo
     id: deps.id(bot ? 'bot' : 'player'),
     name: name?.trim().slice(0, 24) || 'Player',
     bot,
-    hand: [],
     playArea: [],
     goalOptions: [],
     goal: null,
@@ -65,7 +66,9 @@ export function createRoom(deps: RuleDeps, hostName = 'Player'): Room {
     deck: [],
     market: [],
     currentPlayerIndex: 0,
-    turnsThisPick: 0,
+    drawn: null,
+    reversePending: false,
+    discard: [],
     pendingClaim: null,
     lastReveal: [],
     claimedCombos: [],
@@ -102,6 +105,9 @@ export function startGame(deps: RuleDeps, room: Room): void {
   room.phase = 'goal';
   room.lastReveal = [];
   room.currentPlayerIndex = 0;
+  room.drawn = null;
+  room.reversePending = false;
+  room.discard = [];
   addEvent(deps, room, 'game_start', '게임을 시작합니다. 비밀 목표를 선택하세요.');
   addEvent(deps, room, 'turn_order', `자리 순서: ${room.players.map((player) => player.name).join(' → ')}`);
 
@@ -123,16 +129,34 @@ export function chooseGoal(deps: RuleDeps, room: Room, playerId: string, goalId:
 }
 
 function maybeBeginDraft(deps: RuleDeps, room: Room): void {
-  if (room.players.every((p) => p.goal)) {
-    room.phase = 'draft';
-    dealRound(room);
-    addEvent(deps, room, 'round_start', 'Round 1이 시작됐습니다. 손패는 왼쪽으로 전달됩니다.');
-  }
+  if (!room.players.every((p) => p.goal)) return;
+  room.phase = 'draft';
+  room.currentPlayerIndex = 0;
+  room.pendingClaim = null;
+  addEvent(deps, room, 'round_start', '드래프트를 시작합니다. 차례가 오면 카드를 한 장 뽑습니다.');
+  drawForTurn(deps, room);
 }
 
-function dealRound(room: Room): void {
-  room.players.forEach((p) => { p.hand = room.deck.splice(0, 5); });
-  preparePick(room);
+/**
+ * Draws the card the player on turn will place.
+ *
+ * A reverse card is not a card you can play: it flips the order and is set
+ * aside, then another is drawn in its place. The flip is held until the turn
+ * finishes, so the player still acts before the order changes.
+ */
+function drawForTurn(deps: RuleDeps, room: Room): void {
+  room.drawn = null;
+  while (room.deck.length) {
+    const card = room.deck.shift()!;
+    if (card.kind !== 'order-reverse') {
+      room.drawn = card;
+      return;
+    }
+    room.discard.push(card);
+    room.reversePending = true;
+    const seat = room.players[room.currentPlayerIndex];
+    addEvent(deps, room, 'reverse', `순서 바꾸기 카드가 나왔습니다. 이 턴 뒤로 순서가 뒤집힙니다.`, seat?.id ?? null);
+  }
 }
 
 export function submitPick(
@@ -147,8 +171,9 @@ export function submitPick(
   const p = mustPlayer(room, playerId);
   const current = room.players[room.currentPlayerIndex];
   if (!current || current.id !== playerId) throw ruleError('현재 당신의 턴이 아닙니다.');
-  const card = p.hand.find((c) => c.id === cardId);
-  if (!card) throw ruleError('손패에 없는 카드입니다.');
+  if (!room.drawn) throw ruleError('뽑은 카드가 없습니다.');
+  if (room.drawn.id !== cardId) throw ruleError('뽑은 카드가 아닙니다.');
+  const card = room.drawn;
 
   let market: Card | null = null;
   if (marketCardId) {
@@ -171,10 +196,17 @@ export function playBotTurn(deps: RuleDeps, room: Room, playerId: string): void 
   if (room.phase !== 'draft' || room.pendingClaim) throw ruleError('지금은 봇이 행동할 수 없습니다.');
   const player = room.players[room.currentPlayerIndex];
   if (!player?.bot || player.id !== playerId) throw ruleError('현재 봇의 턴이 아닙니다.');
-  if (!player.hand.length) throw ruleError('봇의 손패가 비어 있습니다.');
-  const card = [...player.hand].sort((a, b) => botValue(deps, b, player) - botValue(deps, a, player))[0]!;
+  if (!room.drawn) throw ruleError('뽑은 카드가 없습니다.');
+
+  // Take the market card instead when it is clearly worth more than the draw.
+  const drawn = room.drawn;
+  const best = room.market
+    .map((card) => ({ card, value: botValue(deps, card, player) }))
+    .sort((a, b) => b.value - a.value)[0];
+  const swap = best && best.value > botValue(deps, drawn, player) + 2 ? best.card : null;
+
   const before = new Set(claimableCombos(player.playArea).map(comboKey));
-  resolveTurn(deps, room, player, card, null);
+  resolveTurn(deps, room, player, drawn, swap);
   claimableCombos(player.playArea)
     .map(comboKey)
     .filter((key) => !before.has(key) && !room.claimedCombos.includes(key))
@@ -193,8 +225,7 @@ function botValue(deps: RuleDeps, card: Card, player: Player): number {
 }
 
 function resolveTurn(deps: RuleDeps, room: Room, player: Player, selected: Card, marketCard: Card | null = null): void {
-  const handIndex = player.hand.findIndex((c) => c.id === selected.id);
-  player.hand.splice(handIndex, 1);
+  room.drawn = null;
   let gained = selected;
 
   if (marketCard) {
@@ -214,38 +245,36 @@ function resolveTurn(deps: RuleDeps, room: Room, player: Player, selected: Card,
 
 function advanceTurn(deps: RuleDeps, room: Room): void {
   room.pendingClaim = null;
-  room.turnsThisPick += 1;
 
-  if (room.turnsThisPick >= room.players.length) {
-    if (room.pick >= 5) {
-      if (room.round >= 3) {
-        room.phase = 'finished';
-        room.currentPlayerIndex = 0;
-        addEvent(deps, room, 'game_end', '게임이 종료됐습니다. 최종 점수를 확인하세요.');
-        return;
-      }
-      room.round += 1;
-      room.pick = 1;
-      room.direction = room.round === 2 ? 'right' : 'left';
-      dealRound(room);
-      addEvent(deps, room, 'round_start', `Round ${room.round}가 시작됐습니다. 손패는 ${room.direction === 'left' ? '왼쪽' : '오른쪽'}으로 전달됩니다.`);
-    } else {
-      rotateHands(room);
-      room.pick += 1;
-      preparePick(room);
-      addEvent(deps, room, 'pass', `모든 플레이어가 행동했습니다. 손패를 ${room.direction === 'left' ? '왼쪽' : '오른쪽'}으로 전달합니다.`);
-    }
-  } else room.currentPlayerIndex = (room.currentPlayerIndex + 1) % room.players.length;
-}
+  const played = room.players.reduce((sum, player) => sum + player.playArea.length, 0);
+  if (played >= room.players.length * CARDS_PER_PLAYER || (!room.deck.length && !room.drawn)) {
+    room.phase = 'finished';
+    room.currentPlayerIndex = 0;
+    room.drawn = null;
+    addEvent(deps, room, 'game_end', '게임이 종료됐습니다. 최종 점수를 확인하세요.');
+    return;
+  }
 
-function rotateHands(room: Room): void {
-  const oldHands = room.players.map((p) => p.hand);
+  // Draw before choosing the next seat: a reverse card turned up by this draw
+  // changes who comes next, not the seat after that. The player who just acted
+  // had already placed their card, so they are unaffected.
+  drawForTurn(deps, room);
+
+  if (room.reversePending) {
+    room.reversePending = false;
+    room.direction = room.direction === 'left' ? 'right' : 'left';
+    addEvent(deps, room, 'reverse', `진행 순서가 ${directionName(room.direction)} 방향으로 바뀝니다.`);
+  }
+
   const n = room.players.length;
-  room.players.forEach((p, i) => {
-    const source = room.direction === 'left' ? (i - 1 + n) % n : (i + 1) % n;
-    p.hand = oldHands[source]!;
-  });
+  room.currentPlayerIndex = room.direction === 'left'
+    ? (room.currentPlayerIndex + 1) % n
+    : (room.currentPlayerIndex - 1 + n) % n;
+  room.pick = played + 1;
+  room.round = Math.min(3, Math.floor(played / (n * CARDS_PER_PLAYER / 3)) + 1);
 }
+
+const directionName = (direction: string): string => (direction === 'left' ? '왼쪽' : '오른쪽');
 
 export function claimCombo(deps: RuleDeps, room: Room, playerId: string, container: string, name: string): void {
   const p = mustPlayer(room, playerId);
@@ -307,18 +336,12 @@ function addEvent(deps: RuleDeps, room: Room, type: EventType, message: string, 
   if (room.events.length > 30) room.events.splice(0, room.events.length - 30);
 }
 
-function preparePick(room: Room): void {
-  const globalPick = (room.round - 1) * 5 + room.pick - 1;
-  room.currentPlayerIndex = globalPick % room.players.length;
-  room.turnsThisPick = 0;
-  room.pendingClaim = null;
-}
-
 export function actionOrder(room: Room): string[] {
-  if (!room.players.length) return [];
-  const globalPick = Math.max(0, (room.round - 1) * 5 + room.pick - 1);
-  const starter = globalPick % room.players.length;
-  return room.players.map((_, offset) => room.players[(starter + offset) % room.players.length]!.id);
+  const n = room.players.length;
+  if (!n) return [];
+  const step = room.direction === 'left' ? 1 : -1;
+  return room.players.map((_, offset) =>
+    room.players[(room.currentPlayerIndex + offset * step + n * n) % n]!.id);
 }
 
 function awardClaim(deps: RuleDeps, room: Room, player: Player, key: string): void {

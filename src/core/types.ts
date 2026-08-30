@@ -5,7 +5,9 @@ export type CardKind =
   | 'operation-wildcard'
   | 'container-wildcard'
   | 'wildcard'
-  | 'utility';
+  | 'utility'
+  /** Reverses the turn order when drawn. Never reaches a play area. */
+  | 'order-reverse';
 
 export interface Card {
   readonly id: string;
@@ -62,7 +64,8 @@ export type EventType =
   | 'pass'
   | 'game_end'
   | 'reconnect'
-  | 'disconnect';
+  | 'disconnect'
+  | 'reverse';
 
 export interface GameEvent {
   readonly id: string;
@@ -86,7 +89,6 @@ export interface Player {
   id: string;
   name: string;
   bot: boolean;
-  hand: Card[];
   playArea: Card[];
   goalOptions: Goal[];
   goal: Goal | null;
@@ -106,7 +108,11 @@ export interface Room {
   deck: Card[];
   market: Card[];
   currentPlayerIndex: number;
-  turnsThisPick: number;
+  /** The card the player on turn has drawn and not yet placed. */
+  drawn: Card | null;
+  /** Set when a reverse card came up; applied once this turn resolves. */
+  reversePending: boolean;
+  discard: Card[];
   pendingClaim: PendingClaim | null;
   lastReveal: Reveal[];
   claimedCombos: string[];
@@ -168,7 +174,6 @@ export interface PublicProgress {
 export interface PublicMe {
   readonly id: string;
   readonly name: string;
-  readonly hand: readonly Card[];
   readonly goalOptions: readonly Goal[];
   readonly goal: Goal | null;
   readonly isMyTurn: boolean;
@@ -181,7 +186,11 @@ export interface PublicState {
   readonly phase: Phase;
   readonly round: number;
   readonly pick: number;
+  /** Which way the turn passes. A reverse card flips it. */
   readonly direction: Direction;
+  /** The card on offer to the player on turn. Face up to everyone. */
+  readonly drawn: Card | null;
+  readonly deckCount: number;
   readonly progress: PublicProgress;
   readonly hostPlayerId: string;
   readonly me: PublicMe | null;

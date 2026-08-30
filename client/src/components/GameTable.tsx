@@ -83,8 +83,8 @@ function TableFallback({ state }: { readonly state: PublicState }) {
   return (
     <>
       <CardButtons
-        label="내 손패 (키보드 선택)"
-        cards={state.me?.hand ?? []}
+        label="뽑은 카드 (키보드 선택)"
+        cards={state.drawn ? [state.drawn] : []}
         selectedId={selectedCardId}
         previewId={previewCardId}
         disabled={!myTurn}

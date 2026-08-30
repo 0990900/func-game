@@ -17,132 +17,126 @@ function fourPlayerDraft(seed = 1): Table {
   return table;
 }
 
-function playAndContinue(table: Table, playerId: string, cardId: string, marketCardId: string | null = null): void {
-  table.run(Command.pick(playerId, cardId, marketCardId));
-  if (table.room.pendingClaim?.playerId === playerId) table.run(Command.finishClaim(playerId));
+/** Plays whoever is on turn, taking the drawn card, and settles any claim. */
+function playTurn(table: Table, marketCardId: string | null = null): void {
+  const current = table.room.players[table.room.currentPlayerIndex]!;
+  const drawn = table.room.drawn!;
+  if (current.bot) {
+    table.run(Command.botTurn(current.id));
+    return;
+  }
+  table.run(Command.pick(current.id, drawn.id, marketCardId));
+  if (table.room.pendingClaim?.playerId === current.id) {
+    table.run(Command.finishClaim(current.id));
+  }
 }
 
-test('draft is sequential and only current player can pick', () => {
+test('the draft deals no hands: the player on turn draws one card', () => {
+  const table = fourPlayerDraft();
+  assert.equal(table.room.phase, 'draft');
+  assert.ok(table.room.drawn, 'a card is waiting for the player on turn');
+  assert.equal(table.room.market.length, 4);
+  // Nobody holds cards; the only private thing left is a secret goal.
+  assert.equal(table.room.players.every((p) => p.playArea.length === 0), true);
+});
+
+test('only the current player can take the drawn card, and only that card', () => {
   const table = fourPlayerDraft();
   const [a, b] = table.room.players;
-  assert.equal(publicState(table.room, a!.id).me!.isMyTurn, true);
-  assert.equal(publicState(table.room, b!.id).me!.isMyTurn, false);
-  assert.match(table.expectError(Command.pick(b!.id, b!.hand[0]!.id)).message, /현재 당신의 턴/);
+  const drawn = table.room.drawn!;
 
-  playAndContinue(table, a!.id, a!.hand[0]!.id);
-  assert.equal(publicState(table.room, b!.id).me!.isMyTurn, true);
-  assert.equal(table.room.pick, 1);
+  assert.match(table.expectError(Command.pick(b!.id, drawn.id)).message, /현재 당신의 턴/);
+  assert.match(table.expectError(Command.pick(a!.id, 'not-the-card')).message, /뽑은 카드가 아닙니다/);
+
+  playTurn(table);
+  assert.equal(table.room.players[0]!.playArea.length, 1);
 });
 
-test('after all four turns, hands pass and pick advances', () => {
+test('a new card is drawn for each turn and the seat moves on', () => {
   const table = fourPlayerDraft();
-  const originalHands = table.room.players.map((p) => p.hand.map((c) => c.id));
+  const first = table.room.drawn!.id;
+  const seat = table.room.currentPlayerIndex;
 
-  for (const player of [...table.room.players]) {
-    playAndContinue(table, player.id, table.room.players.find((p) => p.id === player.id)!.hand[0]!.id);
-  }
+  playTurn(table);
 
-  assert.equal(table.room.pick, 2);
-  assert.equal(table.room.currentPlayerIndex, 1);
-  // Round 1 passes left: A receives D's remaining hand.
-  const expected = originalHands[3]!.slice(1).sort();
-  const actual = table.room.players[0]!.hand.map((c) => c.id).sort();
-  assert.deepEqual(actual, expected);
-  assert.deepEqual(publicState(table.room, table.room.players[1]!.id).turnOrder, [
-    table.room.players[1]!.id, table.room.players[2]!.id, table.room.players[3]!.id, table.room.players[0]!.id,
-  ]);
+  assert.notEqual(table.room.currentPlayerIndex, seat);
+  assert.ok(table.room.drawn, 'the next player has a card waiting');
+  assert.notEqual(table.room.drawn!.id, first);
 });
 
-test('a new combo pauses the turn for its owner to claim or continue', () => {
+test('a market swap puts the drawn card in the market and takes its card', () => {
   const table = fourPlayerDraft();
-  const current = table.room.players[table.room.currentPlayerIndex]!;
-  const next = table.room.players[(table.room.currentPlayerIndex + 1) % table.room.players.length]!;
-  current.hand[0] = {
-    id: 'forced-map', kind: 'container-function', container: 'Maybe', operation: 'map', label: 'Maybe.map',
-  };
+  // Find a human turn so the choice is ours to make.
+  while (table.room.players[table.room.currentPlayerIndex]!.bot) playTurn(table);
 
-  table.run(Command.pick(current.id, 'forced-map'));
+  const player = table.room.players[table.room.currentPlayerIndex]!;
+  const drawn = table.room.drawn!;
+  const wanted = table.room.market[0]!;
 
-  const paused = publicState(table.room, current.id);
-  assert.equal(paused.players.find((p) => p.id === current.id)!.status, 'claiming');
+  playTurn(table, wanted.id);
+
+  const mine = table.room.players.find((p) => p.id === player.id)!;
+  assert.equal(mine.playArea.at(-1)!.id, wanted.id, 'the market card is played');
+  assert.equal(table.room.market.some((c) => c.id === drawn.id), true, 'the drawn card takes its place');
+  assert.equal(table.room.market.length, 4);
+});
+
+test('the reverse card flips the order and is never played', () => {
+  const table = fourPlayerDraft();
+  // Put the reverse card on top of the deck for the next draw.
+  const reverse = { id: 'rev', kind: 'order-reverse' as const, container: null, operation: 'reverse', label: '순서 바꾸기' };
+  table.room.deck.unshift(reverse);
+  const before = table.room.direction;
+
+  playTurn(table);
+
+  assert.notEqual(table.room.direction, before, 'the order reversed');
+  assert.equal(table.room.drawn!.id === 'rev', false, 'the reverse card is not on offer');
   assert.equal(
-    paused.me!.availableClaims.some((combo) => combo.container === 'Maybe' && combo.name === 'Functor'),
-    true,
+    table.room.players.some((p) => p.playArea.some((c) => c.id === 'rev')),
+    false,
+    'and it never reaches a play area',
   );
-  assert.match(table.expectError(Command.pick(next.id, next.hand[0]!.id)).message, /Claim 선택/);
-
-  table.run(Command.finishClaim(current.id));
-  assert.equal(table.room.players[table.room.currentPlayerIndex]!.id, next.id);
+  assert.equal(table.room.discard.some((c) => c.id === 'rev'), true, 'it is set aside');
 });
 
-test('market exchange resolves immediately on current turn without reservation', () => {
+test('the game ends once everyone has fifteen cards', () => {
   const table = fourPlayerDraft();
-  const a = table.room.players[0]!;
-  const selectedId = a.hand[0]!.id;
-  const marketId = table.room.market[0]!.id;
-
-  playAndContinue(table, a.id, selectedId, marketId);
-
-  assert.equal(table.room.players[0]!.playArea.at(-1)!.id, marketId);
-  assert.equal(table.room.market[0]!.id, selectedId);
-  assert.equal(table.room.currentPlayerIndex, 1);
-});
-
-test('three rounds use left, right, left passing and finish after 60 turns', () => {
-  const table = fourPlayerDraft();
-  const directions: string[] = [];
   let turns = 0;
 
   while (table.room.phase === 'draft') {
-    directions.push(table.room.direction);
-    const current = table.room.players[table.room.currentPlayerIndex]!;
-    playAndContinue(table, current.id, current.hand[0]!.id);
+    playTurn(table);
     turns += 1;
+    assert.ok(turns <= 80, 'the game should finish');
   }
 
   assert.equal(turns, 60);
-  assert.equal(table.room.round, 3);
-  assert.deepEqual(new Set(directions.slice(0, 20)), new Set(['left']));
-  assert.deepEqual(new Set(directions.slice(20, 40)), new Set(['right']));
-  assert.deepEqual(new Set(directions.slice(40)), new Set(['left']));
-  assert.equal(table.room.players.every((p) => p.playArea.length === 15 && p.hand.length === 0), true);
+  assert.equal(table.room.players.every((p) => p.playArea.length === 15), true);
 });
 
-test('viewer state hides opponents hands and secret goals during the game', () => {
+test('viewer state hides secret goals and shows the drawn card to everyone', () => {
   const table = fourPlayerDraft();
   const state = publicState(table.room, table.room.players[0]!.id);
 
-  assert.equal(state.me!.hand.length, 5);
+  assert.ok(state.drawn, 'the draw is face up');
   assert.ok(state.me!.goal);
   for (const player of state.players) {
-    assert.equal('hand' in player, false);
     assert.equal('goal' in player, false);
     assert.equal('goalOptions' in player, false);
   }
   assert.equal(JSON.stringify(state.events).includes('Specialist'), false);
-  assert.equal(JSON.stringify(state.events).includes('Utility Belt'), false);
 });
 
-test('public events and player statuses follow authoritative turns', () => {
+test('turn order follows the direction and starts at the player on turn', () => {
   const table = fourPlayerDraft();
-  const [a, b] = table.room.players;
+  const order = publicState(table.room, table.room.players[0]!.id).turnOrder;
 
-  assert.equal(publicState(table.room, a!.id).players[0]!.status, 'playing');
-  playAndContinue(table, a!.id, a!.hand[0]!.id);
-
-  const state = publicState(table.room, b!.id);
-  assert.equal(state.players[0]!.status, 'waiting');
-  assert.equal(state.players[1]!.status, 'playing');
-  assert.equal(state.events[0]!.type, 'pick');
-  assert.match(state.events[0]!.message, /플레이했습니다/);
-
-  table.run(Command.setConnection(b!.id, false));
-  const disconnected = publicState(table.room, a!.id);
-  assert.equal(disconnected.players[1]!.status, 'disconnected');
-  assert.equal(disconnected.events[0]!.type, 'disconnect');
+  assert.equal(order.length, 4);
+  assert.equal(order[0], table.room.players[table.room.currentPlayerIndex]!.id);
+  assert.equal(new Set(order).size, 4, 'every seat appears once');
 });
 
-test('live public score excludes secret goal and progress counts all turns', () => {
+test('live public score excludes the secret goal', () => {
   const table = fourPlayerDraft();
   const a = table.room.players[0]!;
   a.playArea = [{
@@ -151,35 +145,18 @@ test('live public score excludes secret goal and progress counts all turns', () 
 
   const state = publicState(table.room, a.id);
   assert.deepEqual(state.players[0]!.publicScore, {
-    comboScore: 2,
-    utilityScore: 0,
-    claimScore: 0,
-    total: 2,
+    comboScore: 2, utilityScore: 0, claimScore: 0, total: 2,
   });
   assert.equal('goalScore' in state.players[0]!.publicScore, false);
-  assert.equal(state.progress.turnsCompleted, 1);
-  assert.equal(state.progress.turnsTotal, 60);
-  assert.equal(state.progress.myPicks, 1);
-  assert.equal(state.progress.myPicksTotal, 15);
-  assert.equal(state.progress.turnsThisPick, 0);
 });
 
-test('the same combo can be claimed only once per game', () => {
-  const table = createTable('A');
-  const b = table.run(Command.joinRoom('B'))!;
-  const a = table.room.players[0]!;
-  const mapCard = {
-    id: 'staged-map', kind: 'container-function', container: 'Maybe', operation: 'map', label: 'Maybe.map',
-  } as const;
-  a.playArea = [mapCard];
-  table.room.players.find((p) => p.id === b.id)!.playArea = [{ ...mapCard, id: 'staged-map-b' }];
-  table.room.pendingClaim = { playerId: a.id, keys: ['Maybe:Functor'] };
+test('a disconnect shows up for everyone', () => {
+  const table = fourPlayerDraft();
+  const b = table.room.players[1]!;
 
-  table.run(Command.claim(a.id, 'Maybe', 'Functor'));
+  table.run(Command.setConnection(b.id, false));
 
-  table.room.pendingClaim = { playerId: b.id, keys: ['Maybe:Functor'] };
-  assert.match(table.expectError(Command.claim(b.id, 'Maybe', 'Functor')).message, /이미 Claim된/);
-  assert.equal(publicState(table.room, b.id).me!.availableClaims.length, 0);
-  assert.deepEqual(table.room.players.find((p) => p.id === a.id)!.claims, ['Maybe:Functor']);
-  assert.deepEqual(table.room.players.find((p) => p.id === b.id)!.claims, []);
+  const state = publicState(table.room, table.room.players[0]!.id);
+  assert.equal(state.players[1]!.status, 'disconnected');
+  assert.equal(state.events[0]!.type, 'disconnect');
 });

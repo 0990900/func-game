@@ -44,6 +44,8 @@ function project(
     round: room.round,
     pick: room.pick,
     direction: room.direction,
+    drawn: room.drawn,
+    deckCount: room.deck.length,
     progress: {
       roundsTotal: 3,
       picksPerRound: 5,
@@ -51,14 +53,13 @@ function project(
       turnsTotal: 60,
       myPicks: viewer?.playArea.length || 0,
       myPicksTotal: 15,
-      turnsThisPick: room.turnsThisPick,
+      turnsThisPick: 0,
     },
     hostPlayerId: room.hostPlayerId,
     me: viewer
       ? {
           id: viewer.id,
           name: viewer.name,
-          hand: viewer.hand,
           goalOptions: room.phase === 'goal' ? viewer.goalOptions : [],
           goal: viewer.goal,
           isMyTurn:

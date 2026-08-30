@@ -261,10 +261,11 @@ export class TableScene {
     const seen = new Set<string>();
     let y = PAD;
 
+    // One card, face up, for whoever is on turn — there are no hands any more.
     y = this.layoutRow({
       layer: this.handLayer,
-      title: '내 손패',
-      cards: state.me?.hand ?? [],
+      title: state.me?.isMyTurn ? '내 차례 · 뽑은 카드' : '뽑은 카드',
+      cards: state.drawn ? [state.drawn] : [],
       y,
       seen,
       selectedId: selectedCardId,

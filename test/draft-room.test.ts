@@ -78,7 +78,6 @@ test('DraftRoom runs a game over Colyseus with per-viewer projection', async (t)
     const state = alice.state();
     assert.equal(state.me!.goalOptions.length, 2);
     for (const player of state.players) {
-      assert.equal('hand' in player, false);
       assert.equal('goal' in player, false);
       assert.equal('goalOptions' in player, false);
     }
@@ -91,14 +90,14 @@ test('DraftRoom runs a game over Colyseus with per-viewer projection', async (t)
       await delay(SETTLE);
     }
     assert.equal(alice.state().phase, 'draft');
-    assert.equal(alice.state().me!.hand.length, 5);
+    assert.ok(alice.state().drawn, 'a card is drawn for whoever is on turn');
   });
 
   await t.test('a player off turn is rejected without disturbing the game', async () => {
     const waiting = [alice, bob].find((seat) => !seat.state().me!.isMyTurn);
     if (!waiting) return; // both humans could be mid-bot-turn; nothing to assert
     const before = waiting.errors.length;
-    waiting.room.send('pick', { cardId: waiting.state().me!.hand[0]!.id, marketCardId: null });
+    waiting.room.send('pick', { cardId: waiting.state().drawn!.id, marketCardId: null });
     await delay(SETTLE);
     assert.equal(waiting.errors.length, before + 1);
     assert.match(waiting.errors.at(-1)!, /현재 당신의 턴이 아닙니다|Claim 선택/);
@@ -110,7 +109,7 @@ test('DraftRoom runs a game over Colyseus with per-viewer projection', async (t)
     for (let i = 0; i < 6 && alice.state().progress.turnsCompleted < before + 2; i += 1) {
       const seat = [alice, bob].find((s) => s.state().me!.isMyTurn);
       if (seat) {
-        seat.room.send('pick', { cardId: seat.state().me!.hand[0]!.id, marketCardId: null });
+        seat.room.send('pick', { cardId: seat.state().drawn!.id, marketCardId: null });
         await delay(SETTLE);
         if (seat.state().me!.canFinishClaim) {
           seat.room.send('finish_claim');
@@ -131,7 +130,7 @@ test('DraftRoom runs a game over Colyseus with per-viewer projection', async (t)
       const seat = [alice, bob].find((s) => s.state().me!.isMyTurn);
       if (!seat) { await delay(BOT_WINDOW); continue; }
 
-      const handCard = seat.state().me!.hand[0]!;
+      const handCard = seat.state().drawn!;
       const marketCard = seat.state().market[0]!;
       seat.room.send('pick', { cardId: handCard.id, marketCardId: marketCard.id });
       await delay(SETTLE);
