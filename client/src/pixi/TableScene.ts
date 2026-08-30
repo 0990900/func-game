@@ -23,11 +23,14 @@ const GAP = 12;
 const PAD = 16;
 /** Chips snap to a column grid so their left edges line up down the rows. */
 const CHIP_GAP = 6;
-/* Operation names are short now that the container is named once per row, so
-   the columns can be too — three fit across a phone. */
-const CHIP_COLUMN = 62;
-/** Width of the group label that names the container a row belongs to. */
-const GROUP_LABEL_WIDTH = 74;
+/* A container's whole slot set goes on one line, so every play area is the
+   same shape and they can be compared down the column. Six is the widest set
+   any container has. */
+const SLOT_COUNT = 6;
+const SLOT_GAP = 4;
+const SLOT_ROW = 26;
+/** Just the container's sigil: the row's position and colour say the rest. */
+const GROUP_LABEL_WIDTH = 30;
 /** A full hand. Cards shrink a little to keep it on one row when they nearly fit. */
 const HAND_SIZE = 5;
 /** Narrowest a fanned card's visible strip may get and still show its emblem. */
@@ -510,53 +513,50 @@ export class TableScene {
     }
   }
 
-  private layoutChips(cards: readonly Card[], startY: number, own: boolean): number {
-    const contentLeft = PAD + GROUP_LABEL_WIDTH + CHIP_GAP;
+  private layoutChips(cards: readonly Card[], startY: number, _own: boolean): number {
+    const contentLeft = PAD + GROUP_LABEL_WIDTH + 6;
     const available = this.width - PAD - contentLeft;
-    const columns = Math.max(1, Math.floor((available + CHIP_GAP) / (CHIP_COLUMN + CHIP_GAP)));
-    const columnWidth = Math.floor((available - (columns - 1) * CHIP_GAP) / columns);
+    const cellWidth = Math.floor((available - (SLOT_COUNT - 1) * SLOT_GAP) / SLOT_COUNT);
 
     let y = startY;
 
-    const row = (label: string, tint: number, cells: readonly SlotCell[]): void => {
-      const heading = body(label, 12, tint);
-      heading.position.set(PAD, y + 5);
-      this.areaLayer.addChild(heading);
+    const cell = (index: number, tint: number, slot: SlotCell): void => {
+      const column = index % SLOT_COUNT;
+      if (column === 0 && index > 0) y += SLOT_ROW;
+      const x = contentLeft + column * (cellWidth + SLOT_GAP);
 
-      cells.forEach((cell, index) => {
-        if (index > 0 && index % columns === 0) y += CHIP_HEIGHT;
-        const x = contentLeft + (index % columns) * (columnWidth + CHIP_GAP);
+      // Owned takes the container's colour; a slot a wildcard is standing in
+      // for is starred, since no card of that operation is actually held; a
+      // slot still missing stays grey. The gaps are the point — they are what
+      // says who is going for what.
+      const owned = slot.state === 'owned';
+      const covered = slot.state === 'covered';
+      const colour = owned || covered ? tint : EMPTY_SLOT;
 
-        // Owned reads as the container's colour; a slot a wildcard is standing
-        // in for is marked with a star, since the card doing the work is not
-        // this operation; a slot still missing stays grey. So a play area shows
-        // what is left to find, not only what is there.
-        const owned = cell.state === 'owned';
-        const covered = cell.state === 'covered';
-        const colour = owned || covered ? tint : EMPTY_SLOT;
+      const box = new Graphics()
+        .roundRect(x, y, cellWidth, 22, 3)
+        .fill({ color: owned || covered ? tint : 0x000000, alpha: owned ? 0.16 : covered ? 0.05 : 0.14 })
+        .stroke({ width: 1, color: colour, alpha: owned ? 1 : covered ? 0.8 : 0.4 });
 
-        const box = new Graphics()
-          .roundRect(x, y, columnWidth, 24, 3)
-          .fill({ color: owned || covered ? tint : 0x000000, alpha: owned ? 0.16 : covered ? 0.05 : 0.14 })
-          .stroke({ width: 1, color: colour, alpha: owned ? 1 : covered ? 0.8 : 0.45 });
+      const text = body(covered ? `✦${slot.text}` : slot.text, 11, colour);
+      text.alpha = owned ? 1 : covered ? 0.9 : 0.55;
+      const room = cellWidth - 6;
+      if (text.width > room) text.scale.set(Math.max(0.6, room / text.width));
+      text.position.set(x + Math.round((cellWidth - text.width * text.scale.x) / 2), y + 4);
 
-        // Every chip is the same width and every row holds the same number; a
-        // label that will not fit is shrunk, never given a wider box.
-        const chip = body(covered ? `✦ ${cell.text}` : cell.text, 12, colour);
-        chip.alpha = owned ? 1 : covered ? 0.9 : 0.6;
-        const room = columnWidth - 12;
-        if (chip.width > room) chip.scale.set(Math.max(0.68, room / chip.width));
-        chip.position.set(x + Math.round((columnWidth - chip.width * chip.scale.x) / 2), y + 5);
-
-        this.areaLayer.addChild(box, chip);
-      });
-
-      y += CHIP_HEIGHT;
+      this.areaLayer.addChild(box, text);
     };
 
-    // Containers keep their full set of slots so the gaps are visible. An
-    // opponent only shows a container they have started, or three empty grids
-    // would say nothing while costing the room to say it.
+    const row = (label: string, tint: number, slots: readonly SlotCell[]): void => {
+      const heading = body(label, 12, tint);
+      heading.position.set(PAD, y + 4);
+      this.areaLayer.addChild(heading);
+      slots.forEach((slot, index) => cell(index, tint, slot));
+      y += SLOT_ROW;
+    };
+
+    // Every player gets every container, so the grids line up and a glance down
+    // a column compares four hands at the same slot.
     for (const container of containers) {
       const slots = CONTAINER_SLOTS[container] ?? [];
       const counts = new Map<string, number>();
@@ -565,16 +565,15 @@ export class TableScene {
           counts.set(card.operation, (counts.get(card.operation) ?? 0) + 1);
         }
       }
-      if (!own && counts.size === 0) continue;
-
       const covered = coveredOperations(cards, container, slots);
+
       row(
-        `${containerMeta[container]?.symbol ?? ''} ${container}`,
+        containerMeta[container]?.symbol ?? container,
         toHexNumber(containerColor[container]),
         slots.map((operation) => {
           const count = counts.get(operation) ?? 0;
           if (count > 0) {
-            return { text: count > 1 ? `${operation} ×${count}` : operation, state: 'owned' as const };
+            return { text: count > 1 ? `${operation}×${count}` : operation, state: 'owned' as const };
           }
           return { text: operation, state: covered.has(operation) ? 'covered' as const : 'empty' as const };
         }),
@@ -582,8 +581,8 @@ export class TableScene {
     }
 
     // Wildcards and utilities have no fixed set — a player holds whichever they
-    // drafted — so these rows still list only what is there.
-    for (const [key, label] of [['joker', '✦ 조커'], ['utility', 'λ Utility']] as const) {
+    // drafted — so these rows appear only when there is something in them.
+    for (const [key, label] of [['joker', '✦'], ['utility', 'λ']] as const) {
       const held = new Map<string, number>();
       for (const card of cards) {
         const isJoker = card.kind === 'wildcard' || card.kind === 'operation-wildcard'
@@ -598,7 +597,7 @@ export class TableScene {
         label,
         toHexNumber(key === 'utility' ? utilityColor : wildcardColor),
         [...held].sort((a, b) => a[0].localeCompare(b[0])).map(([text, count]) => ({
-          text: count > 1 ? `${text} ×${count}` : text,
+          text: count > 1 ? `${text}×${count}` : text,
           state: 'owned' as const,
         })),
       );
