@@ -168,10 +168,23 @@ main.my-turn .statusbar { box-shadow: 0 0 0 2px rgba(244, 201, 93, .2), 0 8px 24
 .goal-score { color: var(--accent); font-weight: 900; }
 
 .claim-panel { border-color: var(--maybe); }
-.combo-row { display: grid; grid-template-columns: 90px 1fr; gap: 8px; align-items: center; margin-bottom: 8px; }
-.combo-container { color: var(--card-color); font-size: 12px; font-weight: 900; }
-.combo-row > div { display: grid; grid-template-columns: repeat(4, 1fr); gap: 3px; }
-.combo-step { padding: 5px 3px; border: 1px solid var(--line); color: #8190a0; font-size: 12px; text-align: center; }
+
+.goal-panel { border-color: #5b4c24; background: #14120a; }
+.goal-name { display: block; margin-bottom: var(--space-2); color: var(--accent); font-size: 20px; font-weight: 900; }
+.goal-panel p { margin-bottom: 4px; color: var(--text); }
+.goal-panel p.muted { color: var(--muted); font-size: 13px; }
+
+.combo-group { margin-top: var(--space-3); }
+.combo-container { margin: 0 0 6px; color: var(--card-color); font-size: 13px; font-weight: 900; }
+.combo-list { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; }
+.combo-item { display: grid; gap: 3px; padding: 6px 8px; border: 1px solid var(--line); background: rgba(13, 20, 28, .6); }
+/* A finished combo is the thing the player is hunting; make it unmistakable. */
+.combo-item.is-complete { border-color: var(--accent); background: #1b1708; }
+.combo-name { display: flex; align-items: baseline; gap: var(--space-2); font-size: 13px; font-weight: 800; }
+.combo-item.is-complete .combo-name { color: var(--accent); }
+.combo-score { color: var(--muted); font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.combo-steps { display: flex; flex-wrap: wrap; gap: 3px; }
+.combo-step { padding: 3px 6px; border: 1px solid var(--line); color: #8190a0; font-size: 11px; }
 .combo-step.complete { border-color: var(--accent); background: #29230f; color: var(--accent); }
 
 .event-log { display: grid; gap: var(--space-2); margin: 0; padding: 0; list-style: none; }
@@ -203,7 +216,6 @@ main.my-turn .statusbar { box-shadow: 0 0 0 2px rgba(244, 201, 93, .2), 0 8px 24
   /* Hand and market scroll inside their own container — never the document. */
   .cards { display: flex; overflow-x: auto; scroll-snap-type: x mandatory; padding: 4px 4px 12px; }
   .card { flex: 0 0 148px; scroll-snap-align: start; }
-  .combo-row { grid-template-columns: 76px 1fr; }
   .combo-step { font-size: 11px; }
   .statusbar { top: 4px; }
 

@@ -1,11 +1,8 @@
-/** Chrome around the table: claims, combo hints, score and the event log. Stays DOM. */
-import { comboDefinitions, coveredOperations } from '../../../src/core/combos.ts';
-import { containers } from '../../../src/core/cards.ts';
-import { containerMeta, eventIcon, operationMeta, scoreSummary } from '../theme/meta.ts';
+/** Chrome around the table: claims, the secret goal, combos, score and the log. Stays DOM. */
+import { ComboGuide } from './ComboGuide.tsx';
+import { eventIcon, scoreSummary } from '../theme/meta.ts';
 import { actions } from '../store/gameStore.ts';
 import type { PublicState } from '../../../src/core/types.ts';
-
-const MONAD_REQUIRES = comboDefinitions.find((combo) => combo.name === 'Monad')!.requires;
 
 function ClaimPanel({ state }: { readonly state: PublicState }) {
   const me = state.me;
@@ -33,33 +30,21 @@ function ClaimPanel({ state }: { readonly state: PublicState }) {
   );
 }
 
-/** Shows how close each container is to Monad, using the rules' own matching. */
-function ComboProgress({ state }: { readonly state: PublicState }) {
-  const playArea = state.players.find((player) => player.id === state.me?.id)?.playArea ?? [];
+/**
+ * The player's own secret goal. It was chosen once at the start and then never
+ * shown again, so there was no way to remember what you were playing towards.
+ * Only the viewer's own goal is in publicState, so this cannot leak.
+ */
+function SecretGoal({ state }: { readonly state: PublicState }) {
+  const goal = state.me?.goal;
+  if (!goal) return null;
 
   return (
-    <section className="panel">
-      <h2>조합 진행</h2>
-      {containers.map((container) => {
-        const covered = coveredOperations(playArea, container, MONAD_REQUIRES);
-        return (
-          <div key={container} className="combo-row">
-            <span className={`combo-container card--${containerMeta[container].theme}`}>
-              {containerMeta[container].symbol} {container}
-            </span>
-            <div>
-              {MONAD_REQUIRES.map((operation) => (
-                <span
-                  key={operation}
-                  className={`combo-step${covered.has(operation) ? ' complete' : ''}`}
-                >
-                  {operationMeta[operation]?.[0]} {operation}
-                </span>
-              ))}
-            </div>
-          </div>
-        );
-      })}
+    <section className="panel goal-panel">
+      <h2>내 비밀 목표</h2>
+      <b className="goal-name">{goal.name}</b>
+      <p>{goal.text}</p>
+      <p className="muted">달성하면 게임 종료 시 +{goal.score}점. 나만 볼 수 있습니다.</p>
     </section>
   );
 }
@@ -86,6 +71,7 @@ export function Hud({ state }: { readonly state: PublicState }) {
   return (
     <>
       <ClaimPanel state={state} />
+      <SecretGoal state={state} />
       {mySeat && (
         <section className="panel">
           <h2>내 점수</h2>
@@ -93,7 +79,7 @@ export function Hud({ state }: { readonly state: PublicState }) {
           <p className="muted">{scoreSummary(mySeat.publicScore)}</p>
         </section>
       )}
-      <ComboProgress state={state} />
+      <ComboGuide playArea={mySeat?.playArea ?? []} />
       <EventLog state={state} />
     </>
   );

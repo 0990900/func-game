@@ -56,6 +56,10 @@ export function TableCanvas() {
       // The canvas must never widen the document; it fills its column instead.
       created.canvas.style.width = '100%';
       created.canvas.style.display = 'block';
+      // Pixi sets touch-action:none, which suits a game that owns the whole
+      // screen. Here the table is a tall element inside a scrolling page, so
+      // blocking pans left nowhere to drag. Taps still reach the cards.
+      created.canvas.style.touchAction = 'pan-y';
 
       await waitForFonts();
       const textures = await loadTableTextures();
