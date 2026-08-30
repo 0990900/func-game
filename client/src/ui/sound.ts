@@ -70,6 +70,21 @@ const SAMPLES: Partial<Record<Cue, readonly string[]>> = {
 const SAMPLE_GAIN = 0.55;
 
 /**
+ * How much of a recording is actually the card.
+ *
+ * Kenney's files run 450-770ms, but the card itself is over in a fraction of
+ * that: the transient starts 120-200ms in and what follows is the room. Played
+ * whole, the lead-in delayed every sound and the tail read as hiss — `shove`
+ * worst of all, its noise floor ten times the others'. Only the transient is
+ * played, so the recordings are kept exactly as they came.
+ */
+const CLIP_SECONDS = 0.26;
+/** Silences the cut end, so trimming is not itself a click. */
+const CLIP_FADE = 0.05;
+/** Where the card starts, as a share of the file's own peak. */
+const ONSET = 0.08;
+
+/**
  * How much louder the synthesised cues have to be to sit with the recordings.
  *
  * Kenney's files peak around 0.77, so after `SAMPLE_GAIN` they reach about
@@ -82,8 +97,17 @@ const TONE_GAIN = 7;
 
 let context: AudioContext | null = null;
 let muted = readMuted();
-/** Decoded once and kept: decoding is the expensive part, playing is not. */
-const buffers = new Map<string, AudioBuffer>();
+/** A decoded recording and the window of it worth playing. */
+interface Clip {
+  readonly buffer: AudioBuffer;
+  /** Seconds into the file where the card begins. */
+  readonly offset: number;
+  /** Seconds of it to play. */
+  readonly seconds: number;
+}
+
+/** Decoded and measured once: decoding is the expensive part, playing is not. */
+const clips = new Map<string, Clip>();
 
 function readMuted(): boolean {
   try {
@@ -148,11 +172,11 @@ function unlock(): void {
 async function preload(ctx: AudioContext): Promise<void> {
   const names = Object.values(SAMPLES).flat();
   await Promise.all(names.map(async (name) => {
-    if (buffers.has(name)) return;
+    if (clips.has(name)) return;
     try {
       const response = await fetch(`${import.meta.env.BASE_URL}sounds/${name}.ogg`);
       if (!response.ok) return;
-      buffers.set(name, await ctx.decodeAudioData(await response.arrayBuffer()));
+      clips.set(name, trim(await ctx.decodeAudioData(await response.arrayBuffer())));
     } catch {
       // Safari has historically been uneven about Vorbis; the synthesised
       // fallback covers it rather than the cue going missing.
@@ -160,23 +184,49 @@ async function preload(ctx: AudioContext): Promise<void> {
   }));
 }
 
+/** Finds where the card starts and how much of the file to keep. */
+function trim(buffer: AudioBuffer): Clip {
+  const data = buffer.getChannelData(0);
+  let peak = 0;
+  for (let i = 0; i < data.length; i += 1) peak = Math.max(peak, Math.abs(data[i]!));
+
+  const threshold = peak * ONSET;
+  let onset = 0;
+  while (onset < data.length && Math.abs(data[onset]!) < threshold) onset += 1;
+  // Back off a few milliseconds so the attack itself is not shaved off.
+  onset = Math.max(0, onset - Math.round(buffer.sampleRate * 0.004));
+
+  const offset = onset / buffer.sampleRate;
+  return { buffer, offset, seconds: Math.min(CLIP_SECONDS, buffer.duration - offset) };
+}
+
 /** Plays one recording, if it arrived. Returns whether it did. */
 function sample(ctx: AudioContext, cue: Cue, at = 0): boolean {
   const names = SAMPLES[cue];
   if (!names?.length) return false;
-  const buffer = buffers.get(names[Math.floor(Math.random() * names.length)]!);
-  if (!buffer) return false;
+  const clip = clips.get(names[Math.floor(Math.random() * names.length)]!);
+  if (!clip) return false;
 
   const source = ctx.createBufferSource();
   const gain = ctx.createGain();
-  source.buffer = buffer;
+  source.buffer = clip.buffer;
   // A little detune each time. The ear notices a sound repeating exactly long
   // before it notices one repeating nearly.
-  source.playbackRate.value = 0.94 + Math.random() * 0.12;
-  gain.gain.value = SAMPLE_GAIN;
+  const rate = 0.94 + Math.random() * 0.12;
+  source.playbackRate.value = rate;
+
+  // Playing faster shortens the clip in real time, so the fade has to be placed
+  // against the clock rather than against the buffer.
+  const start = ctx.currentTime + at;
+  const heard = clip.seconds / rate;
+  const fade = Math.min(CLIP_FADE, heard / 2);
+  gain.gain.setValueAtTime(SAMPLE_GAIN, start);
+  gain.gain.setValueAtTime(SAMPLE_GAIN, start + heard - fade);
+  gain.gain.linearRampToValueAtTime(0, start + heard);
+
   source.connect(gain);
   gain.connect(ctx.destination);
-  source.start(ctx.currentTime + at);
+  source.start(start, clip.offset, clip.seconds);
   return true;
 }
 
