@@ -67,6 +67,7 @@ export function createPlayer(deps: RuleDeps, name: string | null | undefined, bo
     goalOptions: [],
     goal: null,
     claims: [],
+    claimPoints: 0,
     connected: true,
   };
 }
@@ -85,7 +86,6 @@ export function createRoom(deps: RuleDeps, hostName = 'Player'): Room {
     drawn: null,
     reversePending: false,
     discard: [],
-    pendingClaim: null,
     lastReveal: [],
     claimedCombos: [],
     events: [],
@@ -130,11 +130,11 @@ export function restartGame(deps: RuleDeps, room: Room): void {
   for (const player of room.players) {
     player.playArea = [];
     player.claims = [];
+    player.claimPoints = 0;
     player.goal = null;
     player.goalOptions = [];
   }
   room.claimedCombos = [];
-  room.pendingClaim = null;
   room.scoreLog = [];
   room.events = [];
   room.phase = 'lobby';
@@ -177,7 +177,6 @@ function maybeBeginDraft(deps: RuleDeps, room: Room): void {
   if (!room.players.every((p) => p.goal)) return;
   room.phase = 'draft';
   room.currentPlayerIndex = 0;
-  room.pendingClaim = null;
   addEvent(deps, room, 'round_start', '드래프트를 시작합니다. 차례가 오면 카드를 한 장 뽑습니다.');
   drawForTurn(deps, room);
 }
@@ -213,7 +212,6 @@ export function submitPick(
   marketCardId: string | null = null,
 ): void {
   if (room.phase !== 'draft') throw ruleError('지금은 카드를 선택할 수 없습니다.');
-  if (room.pendingClaim) throw ruleError('Claim 선택을 먼저 마쳐야 합니다.');
   const p = mustPlayer(room, playerId);
   const current = room.players[room.currentPlayerIndex];
   if (!current || current.id !== playerId) throw ruleError('현재 당신의 턴이 아닙니다.');
@@ -229,18 +227,19 @@ export function submitPick(
 
   const before = new Set(claimableCombos(p.playArea).map(comboKey));
   resolveTurn(deps, room, p, card, market);
-  const claimKeys = claimableCombos(p.playArea)
+  awardClaims(deps, room, p, newClaims(room, p, before));
+  advanceTurn(deps, room);
+}
+
+/** Combos this player has just finished that nobody has declared yet. */
+function newClaims(room: Room, player: Player, before: ReadonlySet<string>): string[] {
+  return claimableCombos(player.playArea)
     .map(comboKey)
     .filter((key) => !before.has(key) && !room.claimedCombos.includes(key));
-  if (claimKeys.length) {
-    room.pendingClaim = { playerId: p.id, keys: claimKeys };
-    armTurnClock(deps, room);
-    addEvent(deps, room, 'claim_ready', `${p.name}님이 새 조합을 완성했습니다. Claim을 선택합니다.`, p.id);
-  } else advanceTurn(deps, room);
 }
 
 export function playBotTurn(deps: RuleDeps, room: Room, playerId: string): void {
-  if (room.phase !== 'draft' || room.pendingClaim) throw ruleError('지금은 봇이 행동할 수 없습니다.');
+  if (room.phase !== 'draft') throw ruleError('지금은 봇이 행동할 수 없습니다.');
   const player = room.players[room.currentPlayerIndex];
   if (!player?.bot || player.id !== playerId) throw ruleError('현재 봇의 턴이 아닙니다.');
   if (!room.drawn) throw ruleError('뽑은 카드가 없습니다.');
@@ -254,10 +253,7 @@ export function playBotTurn(deps: RuleDeps, room: Room, playerId: string): void 
 
   const before = new Set(claimableCombos(player.playArea).map(comboKey));
   resolveTurn(deps, room, player, drawn, swap);
-  claimableCombos(player.playArea)
-    .map(comboKey)
-    .filter((key) => !before.has(key) && !room.claimedCombos.includes(key))
-    .forEach((key) => awardClaim(deps, room, player, key));
+  awardClaims(deps, room, player, newClaims(room, player, before));
   advanceTurn(deps, room);
 }
 
@@ -291,7 +287,6 @@ function resolveTurn(deps: RuleDeps, room: Room, player: Player, selected: Card,
 }
 
 function advanceTurn(deps: RuleDeps, room: Room): void {
-  room.pendingClaim = null;
 
   const played = room.players.reduce((sum, player) => sum + player.playArea.length, 0);
   recordScores(room, played);
@@ -336,28 +331,6 @@ function recordScores(room: Room, turn: number): void {
 }
 
 const directionName = (direction: string): string => (direction === 'left' ? '왼쪽' : '오른쪽');
-
-export function claimCombo(deps: RuleDeps, room: Room, playerId: string, container: string, name: string): void {
-  const p = mustPlayer(room, playerId);
-  const key = `${container}:${name}`;
-  if (room.pendingClaim?.playerId !== playerId || !room.pendingClaim.keys.includes(key)) {
-    throw ruleError('지금 Claim할 수 없는 조합입니다.');
-  }
-  if (room.claimedCombos.includes(key)) throw ruleError('이미 Claim된 조합입니다.');
-  const combo = findCombos(p.playArea).find((c) => c.container === container && c.name === name);
-  if (!combo) throw ruleError('아직 완성되지 않은 조합입니다.');
-  if (!isClaimable(p.playArea, combo.container, combo.requires)) {
-    throw ruleError('조커만으로는 Claim할 수 없습니다. 해당 컨테이너 카드가 최소 한 장 필요합니다.');
-  }
-  awardClaim(deps, room, p, key);
-  room.pendingClaim.keys = room.pendingClaim.keys.filter((candidate) => candidate !== key);
-  if (!room.pendingClaim.keys.length) advanceTurn(deps, room);
-}
-
-export function finishClaim(deps: RuleDeps, room: Room, playerId: string): void {
-  if (room.pendingClaim?.playerId !== playerId) throw ruleError('지금은 Claim 선택을 마칠 수 없습니다.');
-  advanceTurn(deps, room);
-}
 
 export function setPlayerConnection(deps: RuleDeps, room: Room, playerId: string, connected: boolean): void {
   const player = mustPlayer(room, playerId);
@@ -405,11 +378,40 @@ export function actionOrder(room: Room): string[] {
     room.players[(room.currentPlayerIndex + offset * step + n * n) % n]!.id);
 }
 
-function awardClaim(deps: RuleDeps, room: Room, player: Player, key: string): void {
-  const [container, name] = key.split(':');
-  room.claimedCombos.push(key);
-  player.claims.push(key);
-  addEvent(deps, room, 'claim', `${player.name}님이 ${container} ${name}을 Claim했습니다. +1점`, player.id);
+/**
+ * Declares every combo finished on this turn.
+ *
+ * Claiming used to be offered as a choice, and it was not one: a claim costs
+ * nothing, pays a point, and locks the combo away from everyone else, so
+ * declining was strictly worse — and the offer only ever came on the turn the
+ * combo was completed, so declining forfeited it for good. A prompt that stops
+ * the game for a decision with one right answer is friction, not depth.
+ *
+ * Finishing several at once is worth more than finishing them apart. Holding
+ * `Maybe.ap` back until map, pure, alt and zero are down completes Apply,
+ * Applicative and Alternative on one card, and that is planning: the nth combo
+ * declared together pays n, so three at once pays six rather than three.
+ */
+function awardClaims(deps: RuleDeps, room: Room, player: Player, keys: readonly string[]): void {
+  if (keys.length === 0) return;
+
+  keys.forEach((key, index) => {
+    room.claimedCombos.push(key);
+    player.claims.push(key);
+    player.claimPoints += index + 1;
+  });
+
+  const points = (keys.length * (keys.length + 1)) / 2;
+  const names = keys.map((key) => key.replace(':', ' ')).join(', ');
+  addEvent(
+    deps,
+    room,
+    'claim',
+    keys.length > 1
+      ? `${player.name}님이 ${keys.length}개를 한 번에 Claim했습니다: ${names}. +${points}점`
+      : `${player.name}님이 ${names}을 Claim했습니다. +1점`,
+    player.id,
+  );
 }
 
 function mustPlayer(room: Room, playerId: string): Player {

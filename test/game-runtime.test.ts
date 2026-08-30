@@ -113,9 +113,6 @@ test('a bot turn runs exactly one turn and a stale one is rejected', async () =>
     if (current.bot) await runtime.run(Command.botTurn(current.id));
     else {
       await runtime.run(Command.pick(current.id, runtime.state().drawn!.id, null));
-      if (runtime.state().pendingClaim?.playerId === current.id) {
-        await runtime.run(Command.finishClaim(current.id));
-      }
     }
     assert.ok((guard += 1) < 10, 'bot seat never came up');
   }

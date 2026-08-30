@@ -49,7 +49,7 @@ export function renderResultImage(state: PublicState): Promise<Blob> {
 
   ctx.fillStyle = palette.muted;
   ctx.font = font(11);
-  ctx.fillText('굵은 선이 나의 점수입니다. 비밀 목표 점수는 마지막에 더해집니다.', MARGIN, H - 22);
+  ctx.fillText('굵은 선이 나의 점수입니다. 선은 진행 중 공개 점수이고, 순위의 점수는 비밀 목표까지 더한 최종 점수입니다.', MARGIN, H - 22);
 
   return new Promise<Blob>((resolve, reject) => {
     canvas.toBlob(

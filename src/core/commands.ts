@@ -11,8 +11,6 @@ export type GameCommand =
   | { readonly _tag: 'RestartGame'; readonly playerId: string }
   | { readonly _tag: 'ChooseGoal'; readonly playerId: string; readonly goalId: string }
   | { readonly _tag: 'Pick'; readonly playerId: string; readonly cardId: string; readonly marketCardId: string | null }
-  | { readonly _tag: 'Claim'; readonly playerId: string; readonly container: string; readonly name: string }
-  | { readonly _tag: 'FinishClaim'; readonly playerId: string }
   | { readonly _tag: 'BotTurn'; readonly playerId: string }
   | { readonly _tag: 'SetConnection'; readonly playerId: string; readonly connected: boolean };
 
@@ -23,9 +21,6 @@ export const Command = {
   chooseGoal: (playerId: string, goalId: string): GameCommand => ({ _tag: 'ChooseGoal', playerId, goalId }),
   pick: (playerId: string, cardId: string, marketCardId: string | null = null): GameCommand =>
     ({ _tag: 'Pick', playerId, cardId, marketCardId }),
-  claim: (playerId: string, container: string, name: string): GameCommand =>
-    ({ _tag: 'Claim', playerId, container, name }),
-  finishClaim: (playerId: string): GameCommand => ({ _tag: 'FinishClaim', playerId }),
   botTurn: (playerId: string): GameCommand => ({ _tag: 'BotTurn', playerId }),
   setConnection: (playerId: string, connected: boolean): GameCommand =>
     ({ _tag: 'SetConnection', playerId, connected }),
@@ -80,12 +75,6 @@ function apply(deps: RuleDeps, draft: Room, command: GameCommand): Player | null
       return null;
     case 'Pick':
       Rules.submitPick(deps, draft, command.playerId, command.cardId, command.marketCardId);
-      return null;
-    case 'Claim':
-      Rules.claimCombo(deps, draft, command.playerId, command.container, command.name);
-      return null;
-    case 'FinishClaim':
-      Rules.finishClaim(deps, draft, command.playerId);
       return null;
     case 'BotTurn':
       Rules.playBotTurn(deps, draft, command.playerId);

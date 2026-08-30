@@ -456,6 +456,7 @@ main.is-drafting .table-canvas { position: absolute; inset: 0; }
 .score-chart svg { display: block; width: 100%; height: auto; }
 .chart-grid { stroke: var(--line); stroke-width: 1; vector-effect: non-scaling-stroke; }
 .chart-label { fill: var(--muted); font-size: 8px; }
+.chart-note { margin: var(--space-2) 0 0; font-size: 11px; line-height: 1.45; }
 .chart-legend { display: flex; flex-wrap: wrap; gap: var(--space-3); margin: var(--space-2) 0 0; padding: 0; list-style: none; font-size: 12px; color: var(--muted); }
 .chart-legend li { display: flex; align-items: center; gap: 5px; }
 .chart-legend li.is-me { color: var(--text); font-weight: 700; }

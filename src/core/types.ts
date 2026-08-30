@@ -80,11 +80,6 @@ export interface Reveal {
   readonly card: Card;
 }
 
-export interface PendingClaim {
-  playerId: string;
-  keys: string[];
-}
-
 export interface Player {
   id: string;
   name: string;
@@ -94,6 +89,12 @@ export interface Player {
   goal: Goal | null;
   /** Claimed combo keys, formatted `Container:Name`. */
   claims: string[];
+  /**
+   * Points earned by claiming. Not `claims.length`: finishing several combos on
+   * one card pays a rising bonus, and how they were grouped cannot be recovered
+   * from a flat list of keys afterwards.
+   */
+  claimPoints: number;
   connected: boolean;
 }
 
@@ -119,7 +120,6 @@ export interface Room {
   /** Set when a reverse card came up; applied once this turn resolves. */
   reversePending: boolean;
   discard: Card[];
-  pendingClaim: PendingClaim | null;
   lastReveal: Reveal[];
   claimedCombos: string[];
   events: GameEvent[];
@@ -136,7 +136,6 @@ export type PlayerStatus =
   | 'disconnected'
   | 'ready'
   | 'choosing_goal'
-  | 'claiming'
   | 'thinking'
   | 'playing'
   | 'waiting'
@@ -199,8 +198,6 @@ export interface PublicMe {
   readonly goalOptions: readonly Goal[];
   readonly goal: Goal | null;
   readonly isMyTurn: boolean;
-  readonly availableClaims: readonly Combo[];
-  readonly canFinishClaim: boolean;
 }
 
 export interface PublicState {

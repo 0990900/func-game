@@ -1,5 +1,4 @@
 import { Option } from 'effect';
-import { claimableCombos, comboKey } from './combos.ts';
 import { actionOrder, goalScore, CARDS_PER_PLAYER, TURN_LIMIT_MS } from './rules.ts';
 import { scorePlayer } from './scoring.ts';
 import type {
@@ -64,17 +63,7 @@ function project(
           goal: viewer.goal,
           isMyTurn:
             room.phase === 'draft'
-            && !room.pendingClaim
             && room.players[room.currentPlayerIndex]?.id === viewer.id,
-          availableClaims:
-            room.pendingClaim?.playerId === viewer.id
-              ? claimableCombos(viewer.playArea).filter(
-                  (combo) =>
-                    room.pendingClaim!.keys.includes(comboKey(combo))
-                    && !room.claimedCombos.includes(comboKey(combo)),
-                )
-              : [],
-          canFinishClaim: room.pendingClaim?.playerId === viewer.id,
         }
       : null,
     currentPlayerId: room.phase === 'draft' ? room.players[room.currentPlayerIndex]?.id || null : null,
@@ -112,7 +101,6 @@ function playerStatus(room: Room, player: Player): PlayerStatus {
   if (!player.connected) return 'disconnected';
   if (room.phase === 'goal') return player.goal ? 'ready' : 'choosing_goal';
   if (room.phase === 'draft') {
-    if (room.pendingClaim?.playerId === player.id) return 'claiming';
     if (room.players[room.currentPlayerIndex]?.id === player.id) return player.bot ? 'thinking' : 'playing';
     return 'waiting';
   }

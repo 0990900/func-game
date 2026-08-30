@@ -24,8 +24,7 @@ export function TurnClock() {
   const [now, setNow] = useState(() => Date.now());
 
   const endsAt = state?.turnEndsAt ?? null;
-  // Mine to act on: my turn, or my claim to settle.
-  const isMine = Boolean(state?.me?.isMyTurn || state?.me?.canFinishClaim);
+  const isMine = Boolean(state?.me?.isMyTurn);
   const running = endsAt !== null && isMine;
 
   useEffect(() => {

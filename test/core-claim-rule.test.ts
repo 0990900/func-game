@@ -65,22 +65,87 @@ test('the real card has to be one the combo asked for', () => {
   assert.equal(isClaimable(cards, 'Maybe', ['map', 'ap', 'pure', 'chain']), false);
 });
 
-test('a wildcard-only combo is refused at the point of claiming', () => {
+test('a wildcard-only combo is built and scored, but never claimed', () => {
   const table = createTable('A');
   const me = table.room.players[0]!;
-  me.playArea = [universal];
-  table.room.pendingClaim = { playerId: me.id, keys: ['Maybe:Functor'] };
 
-  const rejected = table.expectError(Command.claim(me.id, 'Maybe', 'Functor'));
-  assert.match(rejected.message, /조커만으로는 Claim할 수 없습니다/);
-  assert.deepEqual(table.room.players[0]!.claims, []);
+  // Staged directly: what matters is what happens when the card lands, and the
+  // claim is awarded by playing rather than by a prompt that no longer exists.
+  table.room.phase = 'draft';
+  table.room.drawn = universal;
+  table.run(Command.pick(me.id, universal.id));
+
+  const after = table.room.players[0]!;
+  assert.equal(after.playArea.length, 1, 'the joker was played');
+  assert.equal(
+    findCombos(after.playArea).some((combo) => combo.name === 'Functor'),
+    true,
+    'it still builds Functor, which still scores',
+  );
+  assert.deepEqual(after.claims, [], 'but a joker alone declares nothing');
+  assert.equal(after.claimPoints, 0);
+  assert.deepEqual(table.room.claimedCombos, []);
 });
 
-test('an unclaimable combo is never offered to the player', () => {
+test('finishing several combos on one card pays a rising bonus', () => {
   const table = createTable('A');
   const me = table.room.players[0]!;
-  me.playArea = [universal];
-  table.room.pendingClaim = { playerId: me.id, keys: ['Maybe:Functor'] };
 
-  assert.deepEqual(publicState(table.room, me.id).me!.availableClaims, []);
+  // Everything Maybe Alternative wants except `ap`. Laying that one card down
+  // finishes Apply, Applicative and Alternative at once.
+  me.playArea = [
+    exact('Maybe', 'map'),
+    exact('Maybe', 'pure'),
+    exact('Maybe', 'alt'),
+    exact('Maybe', 'zero'),
+  ];
+  const ap = exact('Maybe', 'ap');
+  table.room.phase = 'draft';
+  table.room.drawn = ap;
+  table.run(Command.pick(me.id, ap.id));
+
+  const after = table.room.players[0]!;
+  assert.deepEqual(
+    [...after.claims].sort(),
+    ['Maybe:Alternative', 'Maybe:Applicative', 'Maybe:Apply'],
+    'three combos finished together',
+  );
+  // The nth combo declared together pays n: 1 + 2 + 3.
+  assert.equal(after.claimPoints, 6);
+});
+
+test('one at a time pays one at a time', () => {
+  const table = createTable('A');
+  const me = table.room.players[0]!;
+  table.room.phase = 'draft';
+
+  // Something for the next turn to draw, or the game ends the moment the deck
+  // runs dry and the second pick is refused.
+  table.room.deck = [exact('Task', 'chain')];
+
+  const map = exact('Maybe', 'map');
+  table.room.drawn = map;
+  table.run(Command.pick(me.id, map.id));
+  assert.deepEqual(table.room.players[0]!.claims, ['Maybe:Functor']);
+  assert.equal(table.room.players[0]!.claimPoints, 1);
+
+  const ap = exact('Maybe', 'ap');
+  table.room.currentPlayerIndex = table.room.players.findIndex((p) => p.id === me.id);
+  table.room.drawn = ap;
+  table.run(Command.pick(table.room.players[0]!.id, ap.id));
+  assert.equal(table.room.players[0]!.claimPoints, 2, 'a second lone claim is worth one more');
+});
+
+test('a combo someone else declared is not claimed again', () => {
+  const table = createTable('A');
+  const me = table.room.players[0]!;
+  table.room.claimedCombos = ['Maybe:Functor'];
+  table.room.phase = 'draft';
+
+  const map = exact('Maybe', 'map');
+  table.room.drawn = map;
+  table.run(Command.pick(me.id, map.id));
+
+  assert.deepEqual(table.room.players[0]!.claims, [], 'the point was already taken');
+  assert.equal(table.room.players[0]!.claimPoints, 0);
 });

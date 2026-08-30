@@ -118,10 +118,6 @@ test('DraftRoom runs a game over Colyseus with per-viewer projection', async (t)
       if (seat) {
         seat.room.send('pick', { cardId: seat.state().drawn!.id, marketCardId: null });
         await delay(SETTLE);
-        if (seat.state().me!.canFinishClaim) {
-          seat.room.send('finish_claim');
-          await delay(SETTLE);
-        }
       } else {
         await delay(BOT_WINDOW);
       }

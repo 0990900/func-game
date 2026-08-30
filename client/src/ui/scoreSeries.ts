@@ -15,7 +15,15 @@ export interface ScoreSeries {
   readonly label: string;
   readonly color: string;
   readonly isMe: boolean;
+  /**
+   * What to print beside the name. The lines are public score, which is all
+   * anyone knew during play; once the game is over the secret goal is added and
+   * the standings show that instead. Printing the public total there too made
+   * the same player show two different numbers with nothing to explain it.
+   */
   readonly total: number;
+  /** True once the total includes a revealed secret goal. */
+  readonly isFinal: boolean;
   /** One point per completed turn, oldest first. */
   readonly points: ReadonlyArray<{ readonly turn: number; readonly score: number }>;
 }
@@ -38,6 +46,7 @@ export const seatColor = (index: number): string =>
 
 export function scorePlot(state: PublicState): ScorePlot {
   const log = state.scoreLog;
+  const finals = new Map((state.scores ?? []).map((score) => [score.playerId, score.total]));
   const lastTurn = log.length > 0 ? log[log.length - 1]!.turn : 0;
   const maxTurn = Math.max(1, lastTurn, state.progress.turnsTotal);
   const maxScore = Math.max(1, ...log.flatMap((sample) => Object.values(sample.totals)));
@@ -56,7 +65,8 @@ export function scorePlot(state: PublicState): ScorePlot {
       label: `${player.name}${player.bot ? ' (Bot)' : ''}`,
       color: seatColor(index),
       isMe: player.id === state.me?.id,
-      total: player.publicScore.total,
+      total: finals.get(player.id) ?? player.publicScore.total,
+      isFinal: finals.has(player.id),
       points: log.map((sample) => ({ turn: sample.turn, score: sample.totals[player.id] ?? 0 })),
     })),
   };

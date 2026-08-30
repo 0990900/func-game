@@ -26,9 +26,6 @@ function playTurn(table: Table, marketCardId: string | null = null): void {
     return;
   }
   table.run(Command.pick(current.id, drawn.id, marketCardId));
-  if (table.room.pendingClaim?.playerId === current.id) {
-    table.run(Command.finishClaim(current.id));
-  }
 }
 
 test('the draft deals no hands: the player on turn draws one card', () => {

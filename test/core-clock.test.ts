@@ -33,9 +33,6 @@ function playTurn(table: Table): void {
     return;
   }
   table.run(Command.pick(current.id, table.room.drawn!.id, null));
-  if (table.room.pendingClaim?.playerId === current.id) {
-    table.run(Command.finishClaim(current.id));
-  }
 }
 
 test('a drawn card starts the clock for the seat on turn', () => {
@@ -55,20 +52,6 @@ test('the clock restarts on the next turn, not on a re-read', () => {
   playTurn(table);
   assert.equal(table.room.turnEndsAt, table.now() + TURN_LIMIT_MS);
   assert.notEqual(table.room.turnEndsAt, first);
-});
-
-test('a pending claim is a decision, so it keeps its own deadline', () => {
-  const table = fourPlayerDraft();
-  // Drive the table until a human is left holding a claim.
-  for (let guard = 0; guard < 80 && !table.room.pendingClaim; guard += 1) {
-    const current = table.room.players[table.room.currentPlayerIndex]!;
-    if (current.bot) { table.run(Command.botTurn(current.id)); continue; }
-    table.advanceClock(1_000);
-    table.run(Command.pick(current.id, table.room.drawn!.id, null));
-  }
-  if (!table.room.pendingClaim) return; // this seed never produced one
-
-  assert.equal(table.room.turnEndsAt, table.now() + TURN_LIMIT_MS);
 });
 
 test('the clock stops once the game is over', () => {

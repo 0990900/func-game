@@ -27,11 +27,11 @@ export interface PlayerScore extends ScoreBreakdown {
   readonly combos: readonly Combo[];
 }
 
-export function scorePlayer(player: Pick<Player, 'playArea' | 'claims'>): PlayerScore {
+export function scorePlayer(player: Pick<Player, 'playArea' | 'claimPoints'>): PlayerScore {
   const combos = scoringCombos(player.playArea);
   const comboScore = combos.reduce((sum, combo) => sum + combo.score, 0);
   const utilities = scoreUtilities(player.playArea);
-  const claimScore = player.claims.length;
+  const claimScore = player.claimPoints;
   return {
     combos,
     comboScore,

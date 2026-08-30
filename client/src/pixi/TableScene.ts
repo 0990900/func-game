@@ -921,9 +921,10 @@ export class TableScene {
     // One number for the card as a whole. Per-combo figures cannot be added up
     // — two tiers of the same container do not both pay — so the delta of the
     // actual score is the only total that is true.
-    // Claims are held constant: taking a card cannot award one on its own, so
-    // the difference is exactly what the cards themselves are worth.
-    const worth = (playArea: readonly Card[]): number => scorePlayer({ playArea: [...playArea], claims: [] }).total;
+    // Claim points are held at zero on both sides, so the difference is exactly
+    // what the cards are worth. What a claim would pay is a separate matter and
+    // depends on how many finish together.
+    const worth = (playArea: readonly Card[]): number => scorePlayer({ playArea: [...playArea], claimPoints: 0 }).total;
     const delta = worth(after) - worth(mine);
     const summary = body(
       delta > 0 ? `이 카드로 공개 점수 +${delta}` : '이 카드로 늘어나는 점수는 없습니다',
@@ -1011,7 +1012,11 @@ export class TableScene {
       this.cardWidth(),
     );
 
-    if (state.players.find((player) => player.id === reveal.playerId)?.status === 'claiming') {
+    // Claiming is automatic now, so there is no `claiming` status to watch for.
+    // The event log says what the card actually earned, and the newest entry is
+    // the one this reveal produced.
+    const latest = state.events[0];
+    if (latest?.type === 'claim' && latest.playerId === reveal.playerId) {
       this.effects.celebrate(destination, cardColor(reveal.card));
     }
   }

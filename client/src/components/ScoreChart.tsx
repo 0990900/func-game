@@ -60,6 +60,14 @@ export function ScoreChart({ state }: { readonly state: PublicState }) {
         ))}
       </svg>
 
+      {/* The lines can only ever be public score — nobody knew the secret goals
+          while the game was running — so once the totals beside the names
+          include them, the difference has to be said out loud. */}
+      <p className="chart-note muted">
+        {plot.series.some((series) => series.isFinal)
+          ? '선은 진행 중 공개 점수입니다. 이름 옆 숫자는 비밀 목표까지 더한 최종 점수입니다.'
+          : '비밀 목표 점수는 게임이 끝나야 더해집니다.'}
+      </p>
       <ul className="chart-legend">
         {plot.series.map((series) => (
           <li key={series.playerId} className={series.isMe ? 'is-me' : undefined}>

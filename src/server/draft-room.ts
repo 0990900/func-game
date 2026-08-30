@@ -21,7 +21,6 @@ export interface JoinOptions {
 
 interface PickMessage { readonly cardId: string; readonly marketCardId?: string | null }
 interface GoalMessage { readonly goalId: string }
-interface ClaimMessage { readonly container: string; readonly name: string }
 
 export class DraftRoom extends Room {
   override maxClients = 4;
@@ -65,9 +64,6 @@ export class DraftRoom extends Room {
       this.dispatch(client, (playerId) => Command.chooseGoal(playerId, message?.goalId)));
     this.onMessage('pick', (client, message: PickMessage) =>
       this.dispatch(client, (playerId) => Command.pick(playerId, message?.cardId, message?.marketCardId ?? null)));
-    this.onMessage('claim', (client, message: ClaimMessage) =>
-      this.dispatch(client, (playerId) => Command.claim(playerId, message?.container, message?.name)));
-    this.onMessage('finish_claim', (client) => this.dispatch(client, Command.finishClaim));
   }
 
   override async onJoin(client: Client, options: JoinOptions): Promise<void> {
@@ -179,19 +175,14 @@ export class DraftRoom extends Room {
       return;
     }
 
-    // A pending claim is a decision too, and it always belongs to a human: bots
-    // settle their claims inside their own turn.
-    const claim = room.pendingClaim;
-    const seat = claim
-      ? room.players.find((player) => player.id === claim.playerId)
-      : room.players[room.currentPlayerIndex];
+    const seat = room.players[room.currentPlayerIndex];
     if (!seat) {
       this.clearTurnTimer();
       return;
     }
 
-    const waitingOnBot = seat.bot && !claim;
-    const key = `${seat.id}:${claim ? 'claim' : 'turn'}:${room.turnEndsAt ?? 0}`;
+    const waitingOnBot = seat.bot;
+    const key = `${seat.id}:${room.turnEndsAt ?? 0}`;
     if (this.turnTimer && this.turnTimerKey === key) return;
 
     this.clearTurnTimer();
@@ -229,17 +220,10 @@ export class DraftRoom extends Room {
    * What to do for a seat that ran out of time.
    *
    * Placing the drawn card is the least destructive choice that can be made on
-   * someone's behalf: they keep the card and stay in the game. Declining to
-   * claim is likewise reversible in spirit — the combo stays on the table for
-   * whoever declares it next.
+   * someone's behalf: they keep the card and stay in the game.
    */
   private autoAction(current: RoomState, playerId: string, waitingOnBot: boolean): GameCommand | null {
     if (current.phase !== 'draft') return null;
-
-    if (current.pendingClaim) {
-      if (current.pendingClaim.playerId !== playerId) return null;
-      return Command.finishClaim(playerId);
-    }
     if (current.players[current.currentPlayerIndex]?.id !== playerId) return null;
     if (waitingOnBot) return Command.botTurn(playerId);
     if (!current.drawn) return null;
