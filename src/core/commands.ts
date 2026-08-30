@@ -1,6 +1,6 @@
 import { Effect } from 'effect';
 import { RuleError } from './errors.ts';
-import { IdGen, Rng } from './services.ts';
+import { Clock, IdGen, Rng } from './services.ts';
 import * as Rules from './rules.ts';
 import type { RuleDeps } from './rules.ts';
 import type { Player, Room } from './types.ts';
@@ -35,10 +35,11 @@ export interface CommandOutcome {
   readonly player: Player | null;
 }
 
-const ruleDeps: Effect.Effect<RuleDeps, never, Rng | IdGen> = Effect.gen(function* () {
+const ruleDeps: Effect.Effect<RuleDeps, never, Rng | IdGen | Clock> = Effect.gen(function* () {
   const rng = yield* Rng;
   const idGen = yield* IdGen;
-  return { id: idGen.make, random: rng.next };
+  const clock = yield* Clock;
+  return { id: idGen.make, random: rng.next, now: clock.now };
 });
 
 const asRuleError = (cause: unknown): RuleError =>
@@ -92,14 +93,14 @@ function apply(deps: RuleDeps, draft: Room, command: GameCommand): Player | null
 export const runCommand = (
   room: Room,
   command: GameCommand,
-): Effect.Effect<CommandOutcome, RuleError, Rng | IdGen> =>
+): Effect.Effect<CommandOutcome, RuleError, Rng | IdGen | Clock> =>
   Effect.gen(function* () {
     const deps = yield* ruleDeps;
     const { room: next, value } = yield* transition(room, (draft) => apply(deps, draft, command));
     return { room: next, player: value };
   });
 
-export const makeRoom = (hostName?: string): Effect.Effect<Room, never, Rng | IdGen> =>
+export const makeRoom = (hostName?: string): Effect.Effect<Room, never, Rng | IdGen | Clock> =>
   Effect.gen(function* () {
     const deps = yield* ruleDeps;
     return Rules.createRoom(deps, hostName);

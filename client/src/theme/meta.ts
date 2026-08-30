@@ -5,7 +5,7 @@
 import type { Card, ContainerName, EventType, PlayerStatus, ScoreBreakdown } from '../../../src/core/types.ts';
 
 export const containerMeta: Record<ContainerName, { symbol: string; theme: string }> = {
-  Maybe: { symbol: '◇?', theme: 'maybe' },
+  Maybe: { symbol: '◇', theme: 'maybe' },
   Either: { symbol: '◐', theme: 'either' },
   List: { symbol: '≡', theme: 'list' },
   Task: { symbol: 'ϟ', theme: 'task' },

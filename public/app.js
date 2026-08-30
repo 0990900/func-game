@@ -6,7 +6,7 @@ let selectedCardId = null;
 let selectedMarketId = null;
 const $ = (id) => document.getElementById(id);
 const containerMeta = {
-  Maybe: { symbol: '◇?', className: 'maybe' },
+  Maybe: { symbol: '◇', className: 'maybe' },
   Either: { symbol: '◐', className: 'either' },
   List: { symbol: '≡', className: 'list' },
   Task: { symbol: 'ϟ', className: 'task' },

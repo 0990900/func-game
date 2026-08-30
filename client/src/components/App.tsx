@@ -29,16 +29,19 @@ function StatusBar() {
   const roomCode = useGame((s) => s.roomCode);
   if (!state) return null;
 
-  const remaining = state.progress.turnsTotal - state.progress.turnsCompleted;
+  const { turnsCompleted, turnsTotal, myCards, cardsPerPlayer } = state.progress;
 
   return (
     <div className="statusbar">
       {state.phase === 'draft' ? (
+        // Every number says what it counts. The old readout was `R2/3 P23/5`:
+        // rounds and picks, which the shared-draw rules do not have. It divided
+        // the turn count by a hardcoded three and compared a counter that runs
+        // to sixty against a five, so it read as `P23/5`.
         <span className="status-progress">
-          <b>R{state.round}/{state.progress.roundsTotal}</b>
-          <b>P{state.pick}/{state.progress.picksPerRound}</b>
-          <b>{remaining}턴</b>
-          <b title={`손패를 ${directionName(state.direction)}으로 전달합니다`}>
+          <b>{turnsCompleted}/{turnsTotal}턴</b>
+          <b>내 카드 {myCards}/{cardsPerPlayer}</b>
+          <b title={`차례가 ${directionName(state.direction)}으로 넘어갑니다`}>
             {state.direction === 'left' ? '←' : '→'}
           </b>
         </span>

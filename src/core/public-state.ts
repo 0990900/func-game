@@ -1,6 +1,6 @@
 import { Option } from 'effect';
 import { claimableCombos, comboKey } from './combos.ts';
-import { actionOrder, goalScore } from './rules.ts';
+import { actionOrder, goalScore, CARDS_PER_PLAYER, TURN_LIMIT_MS } from './rules.ts';
 import { scorePlayer } from './scoring.ts';
 import type {
   FinalScore,
@@ -41,20 +41,20 @@ function project(
   return {
     roomId: room.id,
     phase: room.phase,
-    round: room.round,
-    pick: room.pick,
     direction: room.direction,
     drawn: room.drawn,
     deckCount: room.deck.length,
+    // Derived from the rules rather than restated: a change to the seat count
+    // or the hand size moves the end of the game here too.
     progress: {
-      roundsTotal: 3,
-      picksPerRound: 5,
       turnsCompleted,
-      turnsTotal: 60,
-      myPicks: viewer?.playArea.length || 0,
-      myPicksTotal: 15,
-      turnsThisPick: 0,
+      turnsTotal: room.players.length * CARDS_PER_PLAYER,
+      myCards: viewer?.playArea.length ?? 0,
+      cardsPerPlayer: CARDS_PER_PLAYER,
     },
+    turnEndsAt: room.phase === 'draft' ? room.turnEndsAt : null,
+    turnLimitSeconds: Math.round(TURN_LIMIT_MS / 1000),
+    scoreLog: room.scoreLog,
     hostPlayerId: room.hostPlayerId,
     me: viewer
       ? {

@@ -10,7 +10,17 @@ export class IdGen extends Context.Tag('core/IdGen')<IdGen, {
   readonly make: (prefix: string) => string;
 }>() {}
 
+/** Wall clock. Injectable so tests can hold time still and stamp deadlines. */
+export class Clock extends Context.Tag('core/Clock')<Clock, {
+  readonly now: () => number;
+}>() {}
+
 export const RngLive = Layer.succeed(Rng, { next: Math.random });
+
+export const ClockLive = Layer.succeed(Clock, { now: Date.now });
+
+/** Fixed clock for tests: deadlines become predictable numbers. */
+export const clockFrom = (now: () => number): Layer.Layer<Clock> => Layer.succeed(Clock, { now });
 
 /** Deterministic Rng for tests and golden comparisons. */
 export const rngFrom = (next: () => number): Layer.Layer<Rng> => Layer.succeed(Rng, { next });

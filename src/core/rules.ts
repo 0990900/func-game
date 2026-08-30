@@ -9,6 +9,7 @@
  * rules here; corrections belong in a separate, tested change.
  */
 import { createDeck } from './cards.ts';
+import { scorePlayer } from './scoring.ts';
 import { claimableCombos, comboKey, findCombos, isClaimable } from './combos.ts';
 import { goals } from './goals.ts';
 import { ruleError } from './errors.ts';
@@ -26,9 +27,26 @@ const MAX_PLAYERS = 4;
 /** Cards each player ends the game with. */
 export const CARDS_PER_PLAYER = 15;
 
+/**
+ * How long a seat has to act before the table moves on without it.
+ *
+ * A seat that never acts stalls everyone, and a disconnected player would hold
+ * the game open until their reconnect window closed. On expiry the drawn card
+ * is simply placed, which is the least destructive thing that can be decided
+ * for someone: they keep the card and stay in the game.
+ */
+export const TURN_LIMIT_MS = 30_000;
+
 export interface RuleDeps {
   readonly id: (prefix: string) => string;
   readonly random: () => number;
+  /** Epoch milliseconds. Used only to stamp turn deadlines. */
+  readonly now: () => number;
+}
+
+/** Starts the clock for whoever the table is now waiting on. */
+function armTurnClock(deps: RuleDeps, room: Room): void {
+  room.turnEndsAt = deps.now() + TURN_LIMIT_MS;
 }
 
 export function shuffle<A>(input: readonly A[], random: () => number): A[] {
@@ -58,8 +76,6 @@ export function createRoom(deps: RuleDeps, hostName = 'Player'): Room {
   return {
     id: deps.id('room'),
     phase: 'lobby',
-    round: 0,
-    pick: 0,
     direction: 'left',
     hostPlayerId: host.id,
     players: [host],
@@ -73,6 +89,8 @@ export function createRoom(deps: RuleDeps, hostName = 'Player'): Room {
     lastReveal: [],
     claimedCombos: [],
     events: [],
+    turnEndsAt: null,
+    scoreLog: [],
   };
 }
 
@@ -99,8 +117,6 @@ export function startGame(deps: RuleDeps, room: Room): void {
   room.players = shuffle(room.players, deps.random);
   room.deck = shuffle(createDeck(), deps.random);
   room.market = room.deck.splice(0, 4);
-  room.round = 1;
-  room.pick = 1;
   room.direction = 'left';
   room.phase = 'goal';
   room.lastReveal = [];
@@ -150,6 +166,7 @@ function drawForTurn(deps: RuleDeps, room: Room): void {
     const card = room.deck.shift()!;
     if (card.kind !== 'order-reverse') {
       room.drawn = card;
+      armTurnClock(deps, room);
       return;
     }
     room.discard.push(card);
@@ -188,6 +205,7 @@ export function submitPick(
     .filter((key) => !before.has(key) && !room.claimedCombos.includes(key));
   if (claimKeys.length) {
     room.pendingClaim = { playerId: p.id, keys: claimKeys };
+    armTurnClock(deps, room);
     addEvent(deps, room, 'claim_ready', `${p.name}님이 새 조합을 완성했습니다. Claim을 선택합니다.`, p.id);
   } else advanceTurn(deps, room);
 }
@@ -247,10 +265,13 @@ function advanceTurn(deps: RuleDeps, room: Room): void {
   room.pendingClaim = null;
 
   const played = room.players.reduce((sum, player) => sum + player.playArea.length, 0);
+  recordScores(room, played);
+
   if (played >= room.players.length * CARDS_PER_PLAYER || (!room.deck.length && !room.drawn)) {
     room.phase = 'finished';
     room.currentPlayerIndex = 0;
     room.drawn = null;
+    room.turnEndsAt = null;
     addEvent(deps, room, 'game_end', '게임이 종료됐습니다. 최종 점수를 확인하세요.');
     return;
   }
@@ -270,8 +291,19 @@ function advanceTurn(deps: RuleDeps, room: Room): void {
   room.currentPlayerIndex = room.direction === 'left'
     ? (room.currentPlayerIndex + 1) % n
     : (room.currentPlayerIndex - 1 + n) % n;
-  room.pick = played + 1;
-  room.round = Math.min(3, Math.floor(played / (n * CARDS_PER_PLAYER / 3)) + 1);
+}
+
+/**
+ * Snapshots every player's public total for this turn.
+ *
+ * Scores are derived from the play area, so they could be recomputed from the
+ * final board — but not the shape of how they got there. A chart of who pulled
+ * ahead when needs the value as it stood, so it is recorded as it happens.
+ */
+function recordScores(room: Room, turn: number): void {
+  const totals: Record<string, number> = {};
+  for (const player of room.players) totals[player.id] = scorePlayer(player).total;
+  room.scoreLog.push({ turn, totals });
 }
 
 const directionName = (direction: string): string => (direction === 'left' ? '왼쪽' : '오른쪽');

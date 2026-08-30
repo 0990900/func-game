@@ -1,7 +1,7 @@
 import { Effect, Either, Layer } from 'effect';
 import { runCommand, makeRoom } from './commands.ts';
 import type { GameCommand } from './commands.ts';
-import { idGenSequential, rngFrom, IdGen, Rng } from './services.ts';
+import { clockFrom, idGenSequential, rngFrom, Clock, IdGen, Rng } from './services.ts';
 import type { RuleError } from './errors.ts';
 import type { Player, Room } from './types.ts';
 
@@ -24,11 +24,18 @@ export interface Table {
   expectError: (command: GameCommand) => RuleError;
   /** Replaces the room, for tests that stage state directly. */
   set: (room: Room) => void;
+  /** Reads the table's clock. */
+  now: () => number;
+  /** Moves the table's clock forward, to run a deadline out. */
+  advanceClock: (ms: number) => void;
 }
 
 export function createTable(hostName = 'A', seed = 1): Table {
-  const layer = Layer.merge(rngFrom(mulberry32(seed)), idGenSequential());
-  const provide = <A, E>(effect: Effect.Effect<A, E, Rng | IdGen>): Effect.Effect<A, E> =>
+  // Time starts at a round number and only moves when a test moves it, so a
+  // turn deadline is an exact value rather than something to approximate.
+  let clock = 1_000_000;
+  const layer = Layer.mergeAll(rngFrom(mulberry32(seed)), idGenSequential(), clockFrom(() => clock));
+  const provide = <A, E>(effect: Effect.Effect<A, E, Rng | IdGen | Clock>): Effect.Effect<A, E> =>
     Effect.provide(effect, layer);
 
   let room = Effect.runSync(provide(makeRoom(hostName)));
@@ -36,6 +43,8 @@ export function createTable(hostName = 'A', seed = 1): Table {
   return {
     get room() { return room; },
     set(next: Room) { room = next; },
+    now() { return clock; },
+    advanceClock(ms: number) { clock += ms; },
     run(command) {
       const outcome = Effect.runSync(provide(runCommand(room, command)));
       room = outcome.room;

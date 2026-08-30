@@ -7,6 +7,7 @@ import { RuleError } from '../core/errors.ts';
 import { publicState } from '../core/public-state.ts';
 import { createRoomRuntime } from './game-runtime.ts';
 import type { CommandResult, RoomRuntime } from './game-runtime.ts';
+import type { Room as RoomState } from '../core/types.ts';
 
 /** Seconds a dropped player keeps their seat before it is released. */
 export const RECONNECT_WINDOW = 120;
@@ -28,10 +29,26 @@ export class DraftRoom extends Room {
   /** Overridable so tests do not have to wait out the real window. */
   protected reconnectWindowSeconds = RECONNECT_WINDOW;
 
+  /**
+   * How long to leave a human seat before acting for it. The deadline itself
+   * belongs to the rules; this only reads it, and exists as a seam so tests do
+   * not have to sit through a real turn limit.
+   */
+  protected humanDelayMs(room: RoomState): number {
+    return Math.max(0, (room.turnEndsAt ?? Date.now()) - Date.now());
+  }
+
   private game: RoomRuntime | null = null;
   /** Colyseus sessionId -> game playerId. Survives reconnection. */
   private readonly seats = new Map<string, string>();
-  private botTimer: Delayed | null = null;
+  /**
+   * The one pending auto-action for whoever the table is waiting on: a bot
+   * thinking, or a human's turn clock running out. Bots and humans differ only
+   * in how long the wait is, so they share the timer rather than racing two.
+   */
+  private turnTimer: Delayed | null = null;
+  /** Identifies the wait the timer was armed for, so a re-broadcast never resets it. */
+  private turnTimerKey: string | null = null;
 
   private get runtime(): RoomRuntime {
     if (!this.game) throw new Error('room used before onCreate');
@@ -92,8 +109,13 @@ export class DraftRoom extends Room {
   }
 
   override onDispose(): void {
-    this.botTimer?.clear();
-    this.botTimer = null;
+    this.clearTurnTimer();
+  }
+
+  private clearTurnTimer(): void {
+    this.turnTimer?.clear();
+    this.turnTimer = null;
+    this.turnTimerKey = null;
   }
 
   private async dispatch(client: Client, build: (playerId: string) => GameCommand): Promise<void> {
@@ -131,45 +153,89 @@ export class DraftRoom extends Room {
     for (const client of this.clients) {
       client.send('state', { state: publicState(room, this.seats.get(client.sessionId) ?? null) });
     }
-    this.scheduleBot();
+    this.scheduleTurn();
   }
 
-  private scheduleBot(): void {
-    if (this.botTimer) return;
-
+  /**
+   * Arms the auto-action for the seat the table is waiting on.
+   *
+   * A human gets until `turnEndsAt`, which the rules stamped; a bot gets a
+   * short think. The wait is keyed so repeated broadcasts within one turn leave
+   * the running timer alone — otherwise a bot would have its think restarted,
+   * and re-arming on every state change would let a seat stall indefinitely.
+   */
+  private scheduleTurn(): void {
     const room = this.runtime.state();
-    if (room.phase !== 'draft' || room.pendingClaim) return;
-    const seat = room.players[room.currentPlayerIndex];
-    if (!seat?.bot) return;
+    if (room.phase !== 'draft') {
+      this.clearTurnTimer();
+      return;
+    }
 
+    // A pending claim is a decision too, and it always belongs to a human: bots
+    // settle their claims inside their own turn.
+    const claim = room.pendingClaim;
+    const seat = claim
+      ? room.players.find((player) => player.id === claim.playerId)
+      : room.players[room.currentPlayerIndex];
+    if (!seat) {
+      this.clearTurnTimer();
+      return;
+    }
+
+    const waitingOnBot = seat.bot && !claim;
+    const key = `${seat.id}:${claim ? 'claim' : 'turn'}:${room.turnEndsAt ?? 0}`;
+    if (this.turnTimer && this.turnTimerKey === key) return;
+
+    this.clearTurnTimer();
     const playerId = seat.id;
-    const delay = BOT_DELAY_MIN + Math.floor(Math.random() * BOT_DELAY_SPREAD);
+    const delay = waitingOnBot
+      ? BOT_DELAY_MIN + Math.floor(Math.random() * BOT_DELAY_SPREAD)
+      : this.humanDelayMs(room);
 
-    this.botTimer = this.clock.setTimeout(() => {
-      this.botTimer = null;
+    this.turnTimerKey = key;
+    this.turnTimer = this.clock.setTimeout(() => {
+      this.turnTimer = null;
+      this.turnTimerKey = null;
 
-      // The game may have moved on during the delay — a human claim resolving,
-      // the round ending, or this seat no longer being the one to act. The
-      // re-check runs inside the command's critical section, so nothing can
-      // slip in between deciding and acting.
+      // The game may have moved on during the wait — a claim resolving, the
+      // game ending, or this seat no longer being the one to act. The re-check
+      // runs inside the command's critical section, so nothing can slip in
+      // between deciding and acting.
       void this.runtime
-        .runWith((current) => {
-          if (current.phase !== 'draft' || current.pendingClaim) return null;
-          if (current.players[current.currentPlayerIndex]?.id !== playerId) return null;
-          return Command.botTurn(playerId);
-        })
+        .runWith((current) => this.autoAction(current, playerId, waitingOnBot))
         .then((outcome) => {
           if (Option.isNone(outcome)) return; // the turn moved on; nothing to do
           if (Either.isLeft(outcome.value)) {
-            console.error(`bot turn failed in room ${this.roomId}:`, outcome.value.left.message);
+            console.error(`auto turn failed in room ${this.roomId}:`, outcome.value.left.message);
             return;
           }
           this.broadcastState();
         })
         .catch((cause: unknown) => {
-          console.error(`bot turn crashed in room ${this.roomId}:`, cause);
+          console.error(`auto turn crashed in room ${this.roomId}:`, cause);
         });
     }, delay);
+  }
+
+  /**
+   * What to do for a seat that ran out of time.
+   *
+   * Placing the drawn card is the least destructive choice that can be made on
+   * someone's behalf: they keep the card and stay in the game. Declining to
+   * claim is likewise reversible in spirit — the combo stays on the table for
+   * whoever declares it next.
+   */
+  private autoAction(current: RoomState, playerId: string, waitingOnBot: boolean): GameCommand | null {
+    if (current.phase !== 'draft') return null;
+
+    if (current.pendingClaim) {
+      if (current.pendingClaim.playerId !== playerId) return null;
+      return Command.finishClaim(playerId);
+    }
+    if (current.players[current.currentPlayerIndex]?.id !== playerId) return null;
+    if (waitingOnBot) return Command.botTurn(playerId);
+    if (!current.drawn) return null;
+    return Command.pick(playerId, current.drawn.id, null);
   }
 }
 

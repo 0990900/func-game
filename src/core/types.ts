@@ -97,11 +97,17 @@ export interface Player {
   connected: boolean;
 }
 
+/** A player's running public total, sampled once per completed turn. */
+export interface ScoreSample {
+  /** Cards on the table when the sample was taken: turn 1 is the first play. */
+  readonly turn: number;
+  /** playerId -> public total (secret goals excluded, as always). */
+  readonly totals: Readonly<Record<string, number>>;
+}
+
 export interface Room {
   id: string;
   phase: Phase;
-  round: number;
-  pick: number;
   direction: Direction;
   hostPlayerId: string;
   players: Player[];
@@ -117,6 +123,13 @@ export interface Room {
   lastReveal: Reveal[];
   claimedCombos: string[];
   events: GameEvent[];
+  /**
+   * When the seat on turn runs out of time, as epoch milliseconds. The rules
+   * stamp it; the server owns the timer that fires on it.
+   */
+  turnEndsAt: number | null;
+  /** Public score per player after each turn, oldest first. */
+  scoreLog: ScoreSample[];
 }
 
 export type PlayerStatus =
@@ -161,14 +174,23 @@ export interface PublicPlayer {
   readonly publicScore: ScoreBreakdown;
 }
 
+/**
+ * How far the game has run and how it ends.
+ *
+ * The old shape carried rounds and picks, which the shared-draw rules no longer
+ * have: every seat draws one card on its turn until each has `cardsPerPlayer`.
+ * Those fields reported a hardcoded 3 rounds of 5 picks against a pick counter
+ * that ran to 60, so the header showed impossible readings like `P23/5`.
+ */
 export interface PublicProgress {
-  readonly roundsTotal: number;
-  readonly picksPerRound: number;
+  /** Cards played across the table so far. */
   readonly turnsCompleted: number;
+  /** Cards that will be played in total: seats x cardsPerPlayer. */
   readonly turnsTotal: number;
-  readonly myPicks: number;
-  readonly myPicksTotal: number;
-  readonly turnsThisPick: number;
+  /** Cards the viewer has played. */
+  readonly myCards: number;
+  /** Cards each player ends with — the real end condition. */
+  readonly cardsPerPlayer: number;
 }
 
 export interface PublicMe {
@@ -184,14 +206,18 @@ export interface PublicMe {
 export interface PublicState {
   readonly roomId: string;
   readonly phase: Phase;
-  readonly round: number;
-  readonly pick: number;
   /** Which way the turn passes. A reverse card flips it. */
   readonly direction: Direction;
   /** The card on offer to the player on turn. Face up to everyone. */
   readonly drawn: Card | null;
   readonly deckCount: number;
   readonly progress: PublicProgress;
+  /** Epoch ms the seat on turn must act by, so a client can count it down. */
+  readonly turnEndsAt: number | null;
+  /** Seconds a seat gets, so the countdown knows what a full bar means. */
+  readonly turnLimitSeconds: number;
+  /** Public score per player after each turn, for the score chart. */
+  readonly scoreLog: readonly ScoreSample[];
   readonly hostPlayerId: string;
   readonly me: PublicMe | null;
   readonly currentPlayerId: string | null;

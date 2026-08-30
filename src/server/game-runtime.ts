@@ -16,12 +16,12 @@ import { Effect, Either, Layer, Option } from 'effect';
 import { makeRoom, runCommand } from '../core/commands.ts';
 import type { GameCommand } from '../core/commands.ts';
 import type { RuleError } from '../core/errors.ts';
-import { IdGen, IdGenLive, Rng, RngLive } from '../core/services.ts';
+import { Clock, ClockLive, IdGen, IdGenLive, Rng, RngLive } from '../core/services.ts';
 import type { Player, Room } from '../core/types.ts';
 
-const services = Layer.merge(RngLive, IdGenLive);
+const services = Layer.mergeAll(RngLive, IdGenLive, ClockLive);
 
-const provide = <A, E>(effect: Effect.Effect<A, E, Rng | IdGen>): Effect.Effect<A, E> =>
+const provide = <A, E>(effect: Effect.Effect<A, E, Rng | IdGen | Clock>): Effect.Effect<A, E> =>
   Effect.provide(effect, services);
 
 /** What a command produced: the joined player for `JoinRoom`, otherwise null. */

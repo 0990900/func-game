@@ -37,9 +37,16 @@ class TestDraftRoom extends DraftRoom {
   protected override reconnectWindowSeconds = 2;
 }
 
+/** Runs a human's turn clock out in milliseconds instead of half a minute. */
+class ImpatientDraftRoom extends TestDraftRoom {
+  protected override humanDelayMs(): number { return 120; }
+}
+
 test('DraftRoom runs a game over Colyseus with per-viewer projection', async (t) => {
   const server = new Server({ transport: new WebSocketTransport() });
   server.define('draft', TestDraftRoom);
+  // Same server: `boot()` claims a port, so a second one would race this one.
+  server.define('draft-impatient', ImpatientDraftRoom);
   const colyseus = await boot(server);
   t.after(async () => { await colyseus.shutdown(); });
 
@@ -182,5 +189,36 @@ test('DraftRoom runs a game over Colyseus with per-viewer projection', async (t)
     const seat = alice.state().players.find((p) => p.id === bob.state().me!.id);
     assert.equal(seat?.status, 'disconnected');
     assert.equal(alice.state().events[0]?.type, 'disconnect');
+  });
+
+  await t.test('an idle seat is played for, so one player cannot hold the table', async () => {
+    const idleRoom = await colyseus.createRoom<DraftRoom>('draft-impatient', { name: 'Idle' });
+    const idle = watch(await colyseus.connectTo(idleRoom, { name: 'Idle' }));
+    await delay(SETTLE);
+
+    idle.room.send('start_game');
+    await delay(SETTLE);
+    idle.room.send('choose_goal', { goalId: idle.state().me!.goalOptions[0]!.id });
+    await delay(SETTLE);
+
+    const started = idle.state();
+    assert.equal(started.phase, 'draft');
+    assert.ok(started.turnEndsAt, 'the client is told when the turn runs out');
+    assert.equal(started.turnLimitSeconds, 30);
+    assert.equal(started.progress.turnsTotal, 60);
+
+    // Send nothing from here on. Three bots think for 450-850ms each, so a lap
+    // of the table costs about two seconds; five buys at least two laps.
+    const myId = started.me!.id;
+    await delay(5000);
+
+    const later = idle.state();
+    assert.ok(later.progress.turnsCompleted >= 6, `the table stalled at ${later.progress.turnsCompleted} turns`);
+    assert.ok(
+      later.players.find((p) => p.id === myId)!.cardCount >= 2,
+      'the idle seat was played for more than once, so the clock rearms each turn',
+    );
+    assert.equal(later.scoreLog.length, later.progress.turnsCompleted, 'the score log kept up');
+    assert.equal(idle.errors.length, 0, idle.errors.join(' / '));
   });
 });

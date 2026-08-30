@@ -299,6 +299,9 @@ main.my-turn .statusbar { box-shadow: 0 0 0 2px rgba(244, 201, 93, .2), 0 8px 24
 main.is-drafting {
   display: grid;
   grid-template-rows: auto 1fr auto;
+  /* The reading-width cap is for documents; the table should use the screen. */
+  width: 100%;
+  max-width: none;
   /* --app-height is the visual viewport; dvh is the fallback before the first
      measurement and for browsers without visualViewport. */
   height: var(--app-height, 100dvh);
@@ -334,7 +337,7 @@ main.is-drafting .table-canvas { position: absolute; inset: 0; }
 
 .goal-chip {
   display: flex; align-items: center; gap: var(--space-2); width: 100%;
-  min-height: 34px; padding: 0 10px; border: 1px solid #5b4c24; border-radius: 6px;
+  min-height: 34px; padding: 0 12px; border: 1px solid #5b4c24; border-radius: 6px;
   background: #14120a; color: var(--text); font-size: 13px; font-weight: 700; text-align: left;
 }
 .goal-chip.is-met { border-color: var(--accent); background: #29230f; }
@@ -390,7 +393,13 @@ main.is-drafting .table-canvas { position: absolute; inset: 0; }
 @media (min-width: 761px) {
   /* A wide screen has room to keep the reference open beside the table, so it
      stops being a sheet: the table narrows instead of being covered. */
-  main.is-drafting { grid-template-columns: minmax(0, 1fr) 380px; grid-template-areas: "status status" "table aside" "dock dock"; }
+  /* The reference column only exists while a sheet is open; reserving it
+     otherwise left a third of a desktop screen empty. */
+  main.is-drafting {
+    grid-template-columns: minmax(0, 1fr) 0;
+    grid-template-areas: "status status" "table aside" "dock dock";
+  }
+  main.is-drafting:has(.sheet) { grid-template-columns: minmax(0, 1fr) 380px; }
   main.is-drafting .statusbar { grid-area: status; }
   main.is-drafting .table-area { grid-area: table; }
   main.is-drafting .dock { grid-area: dock; }
@@ -402,7 +411,9 @@ main.is-drafting .table-canvas { position: absolute; inset: 0; }
   .sheet-scrim { display: none; }
   .sheet-handle { display: none; }
 
-  .dock { grid-template-columns: 1fr auto; align-items: center; }
+  /* Side by side, so they have to share a height — the goal chip is shorter
+     than a trigger on its own and the mismatch reads as a misalignment. */
+  .dock { grid-template-columns: 1fr auto; align-items: stretch; }
   .dock .goal-chip { grid-column: 1; }
   .dock-triggers, .dock-confirm { grid-column: 2; }
   .dock-triggers { grid-template-columns: repeat(4, 92px); }
