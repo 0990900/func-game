@@ -32,7 +32,11 @@ export interface CardMetrics {
 const ROOMY: CardMetrics = { height: 190, glyphSize: 38, glyphY: 52, nameY: 104, hintY: 134 };
 const COMPACT: CardMetrics = { height: 156, glyphSize: 30, glyphY: 44, nameY: 84, hintY: 110 };
 
-/** Cards get shorter once the table is narrow enough to wrap the hand. */
+/**
+ * Cards get shorter once the table itself is narrow. This measures the table,
+ * not the window: a side panel opening shrinks the table without the viewport
+ * changing, and the cards should follow the space they actually have.
+ */
 export const metricsFor = (width: number): CardMetrics => (width <= 420 ? COMPACT : ROOMY);
 
 const SURFACE = toHexNumber(palette.surface2);
@@ -77,6 +81,13 @@ export class CardSprite extends Container {
   readonly cardWidth: number;
   /** Set by the scene so a drag can cancel the tap it ends with. */
   suppressed: () => boolean = () => false;
+  /**
+   * Where a tap goes. It is reassignable because a card outlives its row: a
+   * market swap moves the played card into the market, and the sprite is reused
+   * there. Baking the handler in at construction left it reporting a market
+   * card as a hand pick.
+   */
+  private onTap: ((card: Card) => void) | null = null;
 
   constructor({ card, emblem, onTap, metrics = ROOMY, width = CARD_WIDTH }: CardSpriteOptions) {
     super();
@@ -146,14 +157,13 @@ export class CardSprite extends Container {
     this.addChild(this.veil);
     this.drawVeil();
 
-    if (onTap) {
-      this.eventMode = 'static';
-      this.cursor = 'pointer';
-      this.on('pointertap', () => {
-        // A tap that was really the end of a scroll must not choose a card.
-        if (this.enabled && !this.suppressed()) onTap(card);
-      });
-    }
+    this.setOnTap(onTap ?? null);
+    this.eventMode = 'static';
+    this.cursor = 'pointer';
+    this.on('pointertap', () => {
+      // A tap that was really the end of a scroll must not choose a card.
+      if (this.enabled && !this.suppressed()) this.onTap?.(this.card);
+    });
   }
 
   private drawFrame(tint: number): void {
@@ -176,6 +186,10 @@ export class CardSprite extends Container {
         .roundRect(-3, -3, this.cardWidth + 6, this.metrics.height + 6, RADIUS + 2)
         .stroke({ width: 3, color: ACCENT });
     }
+  }
+
+  setOnTap(onTap: ((card: Card) => void) | null): void {
+    this.onTap = onTap;
   }
 
   setEnabled(enabled: boolean): void {

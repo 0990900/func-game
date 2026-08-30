@@ -10,6 +10,11 @@
 
 * { box-sizing: border-box; }
 
+html { background: var(--bg); }
+/* Nothing outside the playing grid may scroll, or iOS rubber-banding drags the
+   whole app off the toolbar and shows bare page behind it. */
+body:has(main.is-drafting) { overflow: hidden; height: 100%; }
+
 body {
   margin: 0;
   min-height: 100vh;
@@ -276,8 +281,12 @@ main.my-turn .statusbar { box-shadow: 0 0 0 2px rgba(244, 201, 93, .2), 0 8px 24
 main.is-drafting {
   display: grid;
   grid-template-rows: auto 1fr auto;
-  height: 100dvh;
-  padding: 0;
+  /* --app-height is the visual viewport; dvh is the fallback before the first
+     measurement and for browsers without visualViewport. */
+  height: var(--app-height, 100dvh);
+  /* Clear of the notch and the home indicator: the status bar would otherwise
+     sit under the clock, and the dock under the browser toolbar. */
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left);
   gap: 0;
   overflow: hidden;
 }
@@ -289,7 +298,7 @@ main.is-drafting .statusbar { position: static; margin: 0; border-width: 0 0 1px
 main.is-drafting .table-area { position: relative; min-height: 0; overflow: hidden; }
 main.is-drafting .table-canvas { position: absolute; inset: 0; }
 
-.turn-dots { display: flex; gap: 5px; }
+.turn-dots { display: flex; gap: 5px; margin: 0; padding: 0; list-style: none; }
 .turn-dot {
   display: grid; place-items: center; min-width: 26px; height: 26px; padding: 0 5px;
   border: 1px solid var(--line); border-radius: 999px;

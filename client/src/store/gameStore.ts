@@ -27,8 +27,6 @@ export interface GameState {
   connectionError: string | null;
   roomCode: string | null;
   state: PublicState | null;
-  /** The previous reveal, kept so the table can animate what just moved. */
-  previousReveal: PublicState['lastReveal'];
   selectedCardId: string | null;
   selectedMarketId: string | null;
   /**
@@ -48,7 +46,6 @@ const initial: GameState = {
   connectionError: null,
   roomCode: null,
   state: null,
-  previousReveal: [],
   selectedCardId: null,
   selectedMarketId: null,
   previewCardId: null,
@@ -100,7 +97,6 @@ const handlers: Handlers = {
 
     set({
       state: next,
-      previousReveal: previous?.lastReveal ?? [],
       selectedCardId: null,
       selectedMarketId: null,
       previewCardId: null,

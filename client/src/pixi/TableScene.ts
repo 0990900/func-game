@@ -14,6 +14,7 @@ import type { Point } from './motion.ts';
 import type { TableTextures } from './assets.ts';
 import { cardFace, statusName } from '../theme/meta.ts';
 import { palette, toHexNumber } from '../theme/tokens.ts';
+import { isNarrow } from '../ui/viewport.ts';
 import type { Card, PublicState, Reveal } from '../../../src/core/types.ts';
 
 const GAP = 12;
@@ -169,11 +170,6 @@ export class TableScene {
    * second row at full size on a desktop column, so cards give up a few pixels
    * to stay on one line — but never below the width their text needs.
    */
-  /** Wide enough to lay every row out flat, or narrow enough to need fanning. */
-  private isNarrow(): boolean {
-    return this.width <= 560;
-  }
-
   private cardWidth(): number {
     const available = this.width - PAD * 2;
     const fitsFive = (available - (HAND_SIZE - 1) * GAP) / HAND_SIZE;
@@ -181,7 +177,11 @@ export class TableScene {
     // A fanned hand must also fit: the last card's right edge is the card's own
     // width past the strips of the four before it.
     const fitsFan = available - (HAND_SIZE - 1) * FAN_MIN_STEP;
-    return Math.max(MIN_CARD_WIDTH, Math.min(preferred, fitsFan));
+    const width = Math.max(MIN_CARD_WIDTH, Math.min(preferred, fitsFan));
+    // On a very narrow screen even the minimum will not fit, and the row is
+    // clipped with no way to scroll to what is off the edge. Legibility gives
+    // way to reachability: a card you can tap beats a card you cannot.
+    return Math.max(1, Math.min(width, available));
   }
 
   destroy(): void {
@@ -238,7 +238,7 @@ export class TableScene {
       enabled: myTurn && Boolean(selectedCardId),
       onTap: this.callbacks.onSelectMarket,
       // Narrow screens fan the market too, so the table fits without scrolling.
-      fan: this.isNarrow(),
+      fan: isNarrow(),
     });
 
     y = this.layoutPlayAreas(state, y + GAP);
@@ -268,7 +268,12 @@ export class TableScene {
 
   private spriteFor(card: Card, onTap: (card: Card) => void): CardSprite {
     const existing = this.sprites.get(card.id);
-    if (existing) return existing;
+    if (existing) {
+      // The same card can change rows — a swap puts a hand card in the market —
+      // so the handler is re-pointed every layout, not fixed at construction.
+      existing.setOnTap(onTap);
+      return existing;
+    }
     const emblemKey = card.kind.includes('wildcard') ? 'wildcard' : card.container;
     const sprite = new CardSprite({
       card,
@@ -292,7 +297,10 @@ export class TableScene {
     // Spread to fill the row: the fan is as open as the width allows, and only
     // overlaps as much as it must.
     const spread = Math.floor((this.width - PAD * 2 - cardWidth) / (count - 1));
-    return Math.min(cardWidth + GAP, Math.max(FAN_MIN_STEP, spread));
+    const step = Math.min(cardWidth + GAP, Math.max(FAN_MIN_STEP, spread));
+    // Never wider than the spread the row can actually hold: clamping up to the
+    // legibility floor is what used to push the last card off the edge.
+    return Math.max(1, Math.min(step, Math.max(1, spread)));
   }
 
   private layoutRow(options: {
@@ -384,8 +392,12 @@ export class TableScene {
   private layoutPlayAreas(state: PublicState, startY: number): number {
     // Chips and their labels are rebuilt every update, so the old ones are
     // destroyed rather than just detached — detaching alone left them alive and
-    // they reappeared as ghosts at the foot of the table.
-    for (const child of this.areaLayer.removeChildren()) child.destroy();
+    // they reappeared as ghosts at the foot of the table. Their tweens go too,
+    // or a pulse keeps writing to a destroyed Text.
+    for (const child of this.areaLayer.removeChildren()) {
+      killTweens(child);
+      child.destroy();
+    }
     let y = startY;
 
     const label = heading('플레이 영역');

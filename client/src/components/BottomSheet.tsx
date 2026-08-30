@@ -15,27 +15,66 @@ import type { ReactNode } from 'react';
 export interface BottomSheetProps {
   readonly open: boolean;
   readonly title: string;
+  /**
+   * A modal sheet covers the table and takes over input. On a wide screen the
+   * sheet becomes a side panel that covers nothing, so it must stop claiming to
+   * be modal — the accessibility tree would otherwise describe a dialog the
+   * player can see straight past.
+   */
   readonly modal?: boolean;
   readonly onClose: () => void;
   readonly children: ReactNode;
 }
 
+const FOCUSABLE =
+  'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]),'
+  + ' textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
 export function BottomSheet({ open, title, modal = true, onClose, children }: BottomSheetProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const titleId = useId();
 
-  // Escape closes any sheet; a modal one also takes focus so the reader lands
-  // inside it rather than continuing down the page behind the scrim.
   useEffect(() => {
     if (!open) return undefined;
 
-    const onKeyDown = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') onClose();
-    };
-    document.addEventListener('keydown', onKeyDown);
-    if (modal) panelRef.current?.focus();
+    const panel = panelRef.current;
+    // Give focus back to whatever opened the sheet, not to the top of the page.
+    const opener = document.activeElement as HTMLElement | null;
 
-    return () => document.removeEventListener('keydown', onKeyDown);
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') {
+        onClose();
+        return;
+      }
+      // A declared modal has to behave like one: Tab cycles inside the sheet
+      // rather than wandering into the table behind it.
+      if (event.key !== 'Tab' || !modal || !panel) return;
+
+      const focusable = [...panel.querySelectorAll<HTMLElement>(FOCUSABLE)];
+      if (focusable.length === 0) {
+        event.preventDefault();
+        return;
+      }
+      const first = focusable[0]!;
+      const last = focusable[focusable.length - 1]!;
+      const active = document.activeElement;
+
+      if (event.shiftKey && (active === first || active === panel)) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && active === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
+    document.addEventListener('keydown', onKeyDown);
+    if (modal) panel?.focus();
+
+    return () => {
+      document.removeEventListener('keydown', onKeyDown);
+      if (modal) opener?.focus?.();
+    };
   }, [open, modal, onClose]);
 
   if (!open) return null;

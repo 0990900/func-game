@@ -60,23 +60,27 @@ function StatusBar() {
 function TurnDots({ state }: { readonly state: PublicState }) {
   const byId = new Map(state.players.map((player) => [player.id, player]));
   return (
-    <span className="turn-dots" aria-label="턴 순서">
+    <ol className="turn-dots" aria-label="턴 순서">
       {state.turnOrder.map((playerId) => {
         const player = byId.get(playerId);
         if (!player) return null;
         const isCurrent = state.currentPlayerId === playerId;
         const isMe = playerId === state.me?.id;
         return (
-          <span
+          <li
             key={playerId}
             className={`turn-dot${isCurrent ? ' is-current' : ''}${isMe ? ' is-me' : ''}`}
+            // Whose turn it is and which seat is mine are carried by colour
+            // alone in the dot; the label says both out loud.
+            aria-current={isCurrent ? 'step' : undefined}
+            aria-label={`${isMe ? '나' : player.name} · ${statusName(player.status)}`}
             title={`${player.name} · ${statusName(player.status)}`}
           >
-            {isMe ? '나' : player.name.replace(/^Bot /, 'B')}
-          </span>
+            <span aria-hidden="true">{isMe ? '나' : player.name.replace(/^Bot /, 'B')}</span>
+          </li>
         );
       })}
-    </span>
+    </ol>
   );
 }
 

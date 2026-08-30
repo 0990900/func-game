@@ -23,6 +23,13 @@ export interface Particles {
 export class EffectLayer {
   private readonly layer = new Container();
   private readonly particles: Particles;
+  /**
+   * Every timeline this layer started. Killing tweens by target is not enough:
+   * these animate `sprite.scale` and `star.position`, which are objects of
+   * their own, so a kill aimed at the sprites leaves them running against
+   * transforms that no longer exist.
+   */
+  private readonly timelines = new Set<gsap.core.Timeline>();
 
   constructor(stage: Container, particles: Particles) {
     this.particles = particles;
@@ -32,7 +39,8 @@ export class EffectLayer {
   }
 
   destroy(): void {
-    gsap.killTweensOf(this.layer.children);
+    for (const timeline of this.timelines) timeline.kill();
+    this.timelines.clear();
     this.layer.destroy({ children: true });
   }
 
@@ -57,8 +65,12 @@ export class EffectLayer {
     this.layer.addChild(sprite);
 
     const timeline = gsap.timeline({
-      onComplete: () => { sprite.destroy({ children: true }); },
+      onComplete: () => {
+        this.timelines.delete(timeline);
+        sprite.destroy({ children: true });
+      },
     });
+    this.timelines.add(timeline);
     timeline
       .to(sprite, { x: to.x, y: to.y, duration: seconds(0.46), ease: 'power2.inOut' }, 0)
       .to(sprite.scale, { x: 0.28, y: 0.28, duration: seconds(0.46), ease: 'power2.inOut' }, 0)
@@ -86,7 +98,14 @@ export class EffectLayer {
       star.scale.set(0.22);
       this.layer.addChild(star);
 
-      gsap.timeline({ onComplete: () => star.destroy() })
+      const spark = gsap.timeline({
+        onComplete: () => {
+          this.timelines.delete(spark);
+          star.destroy();
+        },
+      });
+      this.timelines.add(spark);
+      spark
         .to(star.position, {
           x: at.x + Math.cos(angle) * distance,
           y: at.y + Math.sin(angle) * distance,
@@ -114,7 +133,14 @@ export class EffectLayer {
     sprite.alpha = 0.85;
     this.layer.addChild(sprite);
 
-    gsap.timeline({ onComplete: () => sprite.destroy() })
+    const timeline = gsap.timeline({
+      onComplete: () => {
+        this.timelines.delete(timeline);
+        sprite.destroy();
+      },
+    });
+    this.timelines.add(timeline);
+    timeline
       .to(sprite.scale, { x: options.scale, y: options.scale, duration: seconds(options.duration), ease: 'power2.out' }, 0)
       .to(sprite, { alpha: 0, duration: seconds(options.duration), ease: 'power1.in' }, 0);
   }

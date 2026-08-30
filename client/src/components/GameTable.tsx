@@ -18,29 +18,87 @@ import { Dock } from './Dock.tsx';
 import type { SheetName } from './Dock.tsx';
 import { eventIcon, scoreSummary, statusName } from '../theme/meta.ts';
 import { actions, useGame } from '../store/gameStore.ts';
-import type { PublicState } from '../../../src/core/types.ts';
+import { useIsNarrow } from '../ui/useIsNarrow.ts';
+import type { Card, PublicState } from '../../../src/core/types.ts';
 
-/** A keyboard- and screen-reader-accessible mirror of the canvas hand. */
-function HandFallback({ state }: { readonly state: PublicState }) {
-  const selectedCardId = useGame((s) => s.selectedCardId);
-  const myTurn = Boolean(state.me?.isMyTurn);
+/**
+ * The canvas cannot be read or focused, so every card on it is also a button
+ * here — the market included, or a keyboard player could never make a swap.
+ *
+ * On a narrow screen a card takes two taps: the first previews it. That state
+ * is announced rather than left silent, so a non-visual player can tell the
+ * first press registered.
+ */
+function CardButtons({
+  label,
+  cards,
+  selectedId,
+  previewId,
+  disabled,
+  onSelect,
+}: {
+  readonly label: string;
+  readonly cards: readonly Card[];
+  readonly selectedId: string | null;
+  readonly previewId: string | null;
+  readonly disabled: boolean;
+  readonly onSelect: (cardId: string) => void;
+}) {
+  if (cards.length === 0) return null;
 
   return (
     <div className="sr-hand">
-      <h3 className="visually-hidden">내 손패 (키보드 선택)</h3>
-      {(state.me?.hand ?? []).map((card) => (
-        <button
-          key={card.id}
-          type="button"
-          className="sr-card"
-          disabled={!myTurn}
-          aria-pressed={card.id === selectedCardId}
-          onClick={() => actions.selectCard(card.id)}
-        >
-          {card.label}
-        </button>
-      ))}
+      <h3 className="visually-hidden">{label}</h3>
+      {cards.map((card) => {
+        const chosen = card.id === selectedId;
+        const previewed = card.id === previewId;
+        return (
+          <button
+            key={card.id}
+            type="button"
+            className="sr-card"
+            disabled={disabled}
+            aria-pressed={chosen}
+            aria-label={
+              `${card.label}${previewed ? ' · 미리보기 중, 다시 누르면 선택' : ''}`
+              + `${chosen ? ' · 선택됨' : ''}`
+            }
+            onClick={() => onSelect(card.id)}
+          >
+            {card.label}
+          </button>
+        );
+      })}
     </div>
+  );
+}
+
+function TableFallback({ state }: { readonly state: PublicState }) {
+  const selectedCardId = useGame((s) => s.selectedCardId);
+  const previewCardId = useGame((s) => s.previewCardId);
+  const selectedMarketId = useGame((s) => s.selectedMarketId);
+  const previewMarketId = useGame((s) => s.previewMarketId);
+  const myTurn = Boolean(state.me?.isMyTurn);
+
+  return (
+    <>
+      <CardButtons
+        label="내 손패 (키보드 선택)"
+        cards={state.me?.hand ?? []}
+        selectedId={selectedCardId}
+        previewId={previewCardId}
+        disabled={!myTurn}
+        onSelect={actions.selectCard}
+      />
+      <CardButtons
+        label="시장 (손패를 고른 뒤 교환할 카드 선택)"
+        cards={state.market}
+        selectedId={selectedMarketId}
+        previewId={previewMarketId}
+        disabled={!myTurn || !selectedCardId}
+        onSelect={actions.selectMarket}
+      />
+    </>
   );
 }
 
@@ -69,12 +127,18 @@ function ScoreSheet({ state }: { readonly state: PublicState }) {
 export function GameTable({ state }: { readonly state: PublicState }) {
   const [sheet, setSheet] = useState<SheetName | null>(null);
   const selectedCardId = useGame((s) => s.selectedCardId);
+  // A sheet only covers the table on a narrow screen; wide, it is a side panel
+  // sitting beside it, and calling that a modal dialog would be a lie.
+  const narrow = useIsNarrow();
   const mySeat = state.players.find((player) => player.id === state.me?.id);
 
-  // Choosing a card is a decision; a panel covering the table would be in the
-  // way. The combo guide is the exception — it is what you consult *to* decide,
-  // so it stays and re-reads the selection instead of closing.
-  if (selectedCardId && sheet && sheet !== 'combos') setSheet(null);
+  // Choosing a card is a decision, and a panel over the table is in the way —
+  // except the combo guide, which is what you consult *to* decide, so it stays
+  // and re-reads the selection. Done in an effect: scheduling a render from
+  // inside one is not something React promises to handle.
+  useEffect(() => {
+    if (narrow && selectedCardId && sheet && sheet !== 'combos') setSheet(null);
+  }, [narrow, selectedCardId, sheet]);
 
   // Escape backs out of one thing at a time: an open sheet first, since that is
   // what the player just opened, and only then the card they were holding.
@@ -95,7 +159,7 @@ export function GameTable({ state }: { readonly state: PublicState }) {
     <>
       <div className="table-area">
         <TableCanvas />
-        <HandFallback state={state} />
+        <TableFallback state={state} />
       </div>
 
       <Dock goal={goal} playArea={playArea} me={state.me} openSheet={sheet} onOpenSheet={setSheet} />
@@ -111,7 +175,7 @@ export function GameTable({ state }: { readonly state: PublicState }) {
         <ComboGuide playArea={playArea} />
       </BottomSheet>
 
-      <BottomSheet open={sheet === 'goal'} title="내 비밀 목표" onClose={() => setSheet(null)}>
+      <BottomSheet open={sheet === 'goal'} title="내 비밀 목표" modal={narrow} onClose={() => setSheet(null)}>
         {goal ? (
           <>
             <b className="goal-name">{goal.name}</b>
@@ -123,12 +187,12 @@ export function GameTable({ state }: { readonly state: PublicState }) {
         )}
       </BottomSheet>
 
-      <BottomSheet open={sheet === 'score'} title="점수와 플레이 영역" onClose={() => setSheet(null)}>
+      <BottomSheet open={sheet === 'score'} title="점수와 플레이 영역" modal={narrow} onClose={() => setSheet(null)}>
         <p className="muted">공개 점수입니다. 비밀 목표 점수는 게임이 끝나야 더해집니다.</p>
         <ScoreSheet state={state} />
       </BottomSheet>
 
-      <BottomSheet open={sheet === 'log'} title="진행 기록" onClose={() => setSheet(null)}>
+      <BottomSheet open={sheet === 'log'} title="진행 기록" modal={narrow} onClose={() => setSheet(null)}>
         <ul className="event-log">
           {state.events.map((event) => (
             <li key={event.id}>
