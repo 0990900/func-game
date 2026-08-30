@@ -4,6 +4,7 @@ import { LobbyScreen } from './LobbyScreen.tsx';
 import { GoalScreen } from './GoalScreen.tsx';
 import { GameTable } from './GameTable.tsx';
 import { FinishedScreen } from './FinishedScreen.tsx';
+import { TurnClock } from './TurnClock.tsx';
 import { actions, useGame } from '../store/gameStore.ts';
 import { directionName, phaseName, statusName } from '../theme/meta.ts';
 import type { PublicState } from '../../../src/core/types.ts';
@@ -44,6 +45,7 @@ function StatusBar() {
           <b title={`차례가 ${directionName(state.direction)}으로 넘어갑니다`}>
             {state.direction === 'left' ? '←' : '→'}
           </b>
+          <TurnClock />
         </span>
       ) : (
         <span className="status-progress"><b>{phaseName(state.phase)}</b></span>

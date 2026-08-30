@@ -415,3 +415,32 @@ main.is-drafting .table-canvas { position: absolute; inset: 0; }
   .dock-triggers { grid-template-columns: repeat(4, 92px); }
   .dock-actions { grid-template-columns: auto auto; }
 }
+
+/* The turn clock. The bar drains by transform so the browser can animate it on
+   the compositor: this ticks five times a second beside a live canvas, and a
+   width animation would relayout the status bar every frame. */
+.turn-clock {
+  position: relative; display: inline-grid; place-items: center;
+  min-width: 46px; padding: 2px 8px;
+  border: 1px solid var(--line); border-radius: 3px;
+  overflow: hidden; font-variant-numeric: tabular-nums;
+}
+.turn-clock-bar {
+  position: absolute; inset: 0;
+  transform-origin: left center;
+  background: var(--accent); opacity: .22;
+  transition: transform .2s linear;
+}
+.turn-clock-value { position: relative; color: var(--text); }
+.turn-clock.is-urgent { border-color: #ff7a86; }
+.turn-clock.is-urgent .turn-clock-bar { background: #ff7a86; opacity: .34; }
+.turn-clock.is-urgent .turn-clock-value { color: #ff9aa3; animation: clock-pulse 1s ease-in-out infinite; }
+
+@keyframes clock-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .45; } }
+
+/* A countdown that flashes is a problem for anyone who asked motion to stop.
+   The colour still carries the urgency. */
+@media (prefers-reduced-motion: reduce) {
+  .turn-clock-bar { transition: none; }
+  .turn-clock.is-urgent .turn-clock-value { animation: none; }
+}

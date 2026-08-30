@@ -39,6 +39,12 @@ export interface GameState {
   previewMarketId: string | null;
   toasts: Toast[];
   myTurnAnnounced: boolean;
+  /**
+   * Server clock minus this device's, from the last state received. Turn
+   * deadlines are stamped on the server, so a device whose clock is off would
+   * otherwise run the countdown out early or never.
+   */
+  clockOffset: number;
 }
 
 const initial: GameState = {
@@ -52,6 +58,7 @@ const initial: GameState = {
   previewMarketId: null,
   toasts: [],
   myTurnAnnounced: false,
+  clockOffset: 0,
 };
 
 export const gameStore = createStore<GameState>(() => initial);
@@ -89,7 +96,7 @@ function announceMyTurn(): void {
 }
 
 const handlers: Handlers = {
-  onState: (next) => {
+  onState: (next, serverNow) => {
     const previous = get().state;
     const becameMyTurn = Boolean(next.me?.isMyTurn) && !previous?.me?.isMyTurn;
     if (becameMyTurn) announceMyTurn();
@@ -97,6 +104,7 @@ const handlers: Handlers = {
 
     set({
       state: next,
+      clockOffset: serverNow - Date.now(),
       selectedCardId: null,
       selectedMarketId: null,
       previewCardId: null,

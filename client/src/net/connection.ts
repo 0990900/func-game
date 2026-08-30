@@ -25,7 +25,8 @@ const endpoint = (): string => {
 export const client = new Client(endpoint());
 
 export interface Handlers {
-  readonly onState: (state: PublicState) => void;
+  /** `serverNow` is the server's clock when it sent, for the turn countdown. */
+  readonly onState: (state: PublicState, serverNow: number) => void;
   readonly onError: (message: string) => void;
   readonly onLeave: (code: number) => void;
 }
@@ -33,7 +34,8 @@ export interface Handlers {
 export type GameRoom = Room;
 
 function bind(room: GameRoom, handlers: Handlers): GameRoom {
-  room.onMessage('state', (message: { state: PublicState }) => handlers.onState(message.state));
+  room.onMessage('state', (message: { state: PublicState; serverNow?: number }) =>
+    handlers.onState(message.state, message.serverNow ?? Date.now()));
   room.onMessage('error', (message: { message: string }) => handlers.onError(message.message));
   room.onLeave((code: number) => handlers.onLeave(code));
   return room;

@@ -150,8 +150,15 @@ export class DraftRoom extends Room {
   /** Sends every client its own projection, then lets a bot take its turn. */
   private broadcastState(): void {
     const room = this.runtime.state();
+    // `turnEndsAt` is stamped against the server's clock, so the server says
+    // what time it is when it sends. A client that is a minute fast would
+    // otherwise count a turn down a minute early.
+    const serverNow = Date.now();
     for (const client of this.clients) {
-      client.send('state', { state: publicState(room, this.seats.get(client.sessionId) ?? null) });
+      client.send('state', {
+        state: publicState(room, this.seats.get(client.sessionId) ?? null),
+        serverNow,
+      });
     }
     this.scheduleTurn();
   }
