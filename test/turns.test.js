@@ -121,8 +121,12 @@ test('public events and player statuses follow authoritative turns', () => {
   const state = publicState(room, b.id);
   assert.equal(state.players[0].status, 'waiting');
   assert.equal(state.players[1].status, 'playing');
-  assert.equal(state.events[0].type, 'pick');
-  assert.match(state.events[0].message, /플레이했습니다/);
+  // The card played may also complete a combo, which logs `claim_ready` after
+  // it. Asserting on the newest event made this fail about one run in four:
+  // what the test is about is that the play was recorded, not what came next.
+  const pick = state.events.find((event) => event.type === 'pick');
+  assert.ok(pick, 'the play should be in the log');
+  assert.match(pick.message, /플레이했습니다/);
 
   setPlayerConnection(room, b.id, false);
   const disconnected = publicState(room, a.id);
