@@ -23,6 +23,8 @@ const GAP = 12;
 const PAD = 16;
 /** Cells stop growing past this; a stretched badge is not more readable. */
 const SLOT_MAX_WIDTH = 104;
+/** And stop shrinking here, where the longest operation still reads. */
+const SLOT_MIN_WIDTH = 72;
 /** The card row stops spreading here; five cards strung across 1900px read as
     five unrelated cards rather than one row to choose from. */
 const CARD_ROW_MAX_WIDTH = 760;
@@ -36,6 +38,7 @@ const GROUP_LABEL_WIDTH = 30;
 const AREA_SPLIT_WIDTH = 620;
 const TYPECLASS_COLUMNS = 2;
 const TYPECLASS_MAX_WIDTH = 150;
+const TYPECLASS_MIN_WIDTH = 118;
 
 
 /** A full hand. Cards shrink a little to keep it on one row when they nearly fit. */
@@ -51,6 +54,19 @@ const MARKET_GAP = 32;
 const MARKET_OVERLAP = 0.52;
 /** Narrowest a market card's visible strip may get and still be tappable. */
 const MARKET_MIN_STEP = 30;
+/** How far a chosen card lifts clear of the ones it overlaps. */
+const FAN_LIFT = 16;
+/** The guide answers one question, so it stays short enough to read at a glance. */
+const GUIDE_MAX_ROWS = 6;
+const GUIDE_COLUMNS = 2;
+const GUIDE_MAX_WIDTH = 220;
+
+/** Narrowest the card column may be and still show two cards whole with three
+    tappable strips between them. Below this the columns stack instead. */
+const CARD_COLUMN_MIN_WIDTH = MIN_CARD_WIDTH * 2 + MARKET_GAP + 3 * MARKET_MIN_STEP;
+/** What the card row wants: two cards whole and three at the design overlap. */
+const CARD_COLUMN_WIDTH =
+  CARD_WIDTH * 2 + MARKET_GAP + 3 * Math.round(CARD_WIDTH * MARKET_OVERLAP);
 
 const LINE = toHexNumber(palette.line);
 const MUTED = toHexNumber(palette.muted);
@@ -108,6 +124,13 @@ const TYPECLASS_REGION_WIDTH =
   TYPECLASS_COLUMNS * TYPECLASS_MAX_WIDTH + (TYPECLASS_COLUMNS - 1) * SLOT_GAP;
 const AREA_COLUMN_GAP = GAP * 2;
 const PLAY_AREA_WIDTH = CARDS_REGION_WIDTH + AREA_COLUMN_GAP + TYPECLASS_REGION_WIDTH;
+/* And the least it can be given and still read. Splitting on the width the
+   play area *wants* starved the card column down to 25px strips on a 1440
+   screen: the cells cap at their maximum but do not need it. */
+const PLAY_AREA_MIN_WIDTH =
+  GROUP_LABEL_WIDTH + 6 + SLOT_COUNT * SLOT_MIN_WIDTH + (SLOT_COUNT - 1) * SLOT_GAP
+  + AREA_COLUMN_GAP
+  + TYPECLASS_COLUMNS * TYPECLASS_MIN_WIDTH + (TYPECLASS_COLUMNS - 1) * SLOT_GAP;
 
 /** One cell of a container's row: an operation this player does or does not have. */
 interface SlotCell {
@@ -159,6 +182,8 @@ export class TableScene {
   /** The drawn card and the market, in one row. */
   private readonly cardRowLayer = new Container();
   private readonly areaLayer = new Container();
+  /** Sits under the card row: what the card being considered would change. */
+  private readonly guideLayer = new Container();
   /** Row headings are stable objects: recreating them every update leaked Text. */
   private readonly rowLabels = new Map<Container, Text>();
   /** Live sprites by card id, so identity survives a state update. */
@@ -201,7 +226,7 @@ export class TableScene {
     this.background = textures.tile
       ? new TilingSprite({ texture: textures.tile, width, height: 1 })
       : new Graphics();
-    this.root.addChild(this.background, this.cardRowLayer, this.areaLayer);
+    this.root.addChild(this.background, this.cardRowLayer, this.guideLayer, this.areaLayer);
     app.stage.addChild(this.root);
     // Added last so a card in flight draws above the table, not under it.
     this.effects = new EffectLayer(app.stage, textures.particles);
@@ -329,13 +354,18 @@ export class TableScene {
     const myTurn = Boolean(state.me?.isMyTurn);
     const seen = new Set<string>();
 
-    // The cards sit beside the play areas only when both fit at the size they
-    // actually want. The old rule split at a fixed width and handed each side a
-    // share, which on a 1440 screen left an empty column under the cards and
-    // squeezed the areas; below that it stacked them and wasted nothing.
+    // Two columns when both fit: the cards and, under them, the guide for
+    // whatever is being chosen; the play areas beside them, spanning both.
+    // The play area is the column that cannot shrink much, so it is served
+    // first and the card column takes what is left, down to its own floor.
     const fullWidth = this.width - PAD * 2;
-    const split = fullWidth >= CARD_ROW_MAX_WIDTH + GAP * 2 + PLAY_AREA_WIDTH;
-    const cardsWidth = Math.min(fullWidth, CARD_ROW_MAX_WIDTH);
+    const split = fullWidth >= CARD_COLUMN_MIN_WIDTH + GAP * 2 + PLAY_AREA_MIN_WIDTH;
+    const cardsWidth = split
+      ? Math.max(
+          CARD_COLUMN_MIN_WIDTH,
+          Math.min(CARD_COLUMN_WIDTH, fullWidth - PLAY_AREA_MIN_WIDTH - GAP * 2),
+        )
+      : Math.min(fullWidth, CARD_ROW_MAX_WIDTH);
     const areasLeft = split ? PAD + cardsWidth + GAP * 2 : PAD;
     const areasWidth = split ? this.width - areasLeft - PAD : fullWidth;
 
@@ -388,6 +418,15 @@ export class TableScene {
       // Five cards rarely fit side by side, so they overlap and spread to fill.
       fan: true,
     });
+
+    // What the player is looking at right now: the market card if one is in
+    // hand, otherwise the drawn card. A preview counts — on a phone the first
+    // tap only reads a card, and that is exactly when the guide is wanted.
+    const focusId = previewMarketId ?? selectedMarketId ?? previewCardId ?? selectedCardId;
+    const focus = focusId
+      ? rowCards.find((entry) => entry.card.id === focusId)?.card ?? null
+      : null;
+    y = this.layoutSelectionGuide(state, focus, y + GAP, PAD, cardsWidth);
 
     const areasEnd = this.layoutPlayAreas(state, split ? PAD : y + GAP, areasLeft, areasWidth);
     y = split ? Math.max(y, areasEnd) : areasEnd;
@@ -486,7 +525,9 @@ export class TableScene {
     label.position.set(left, y);
     layer.addChild(label);
 
-    const top = y + ROW_LABEL;
+    // Room for the lift above the cards as well as below: a raised card used to
+    // rise over the row's own heading and cover it.
+    const top = y + ROW_LABEL + (fan ? FAN_LIFT : 0);
     const cardHeight = metricsFor(width).height;
     const cardWidth = this.cardWidth(width);
     // Each card says how far the next one sits, so one row can hold a card that
@@ -525,7 +566,7 @@ export class TableScene {
       const offset = row === 0 ? positions[index]! : column * step;
       // A raised card lifts clear of its neighbours — further when fanned,
       // where the lift is what separates it from the cards it overlaps.
-      const lift = raised ? (fan ? 16 : 5) : 0;
+      const lift = raised ? (fan ? FAN_LIFT : 5) : 0;
       const target: Point = {
         x: left + offset,
         y: top + row * (cardHeight + GAP) - lift,
@@ -559,8 +600,7 @@ export class TableScene {
     if (fan) layer.sortableChildren = true;
 
     const rows = Math.max(1, Math.ceil(cards.length / perRow));
-    // Room for the lift so a raised card is not clipped by the row below.
-    return top + rows * (cardHeight + GAP) + (fan ? 16 : 0);
+    return top + rows * (cardHeight + GAP);
   }
 
   private layoutPlayAreas(state: PublicState, startY: number, left: number, width: number): number {
@@ -702,6 +742,105 @@ export class TableScene {
     return y + SLOT_ROW;
   }
 
+  /**
+   * What the card being considered would do for the typeclasses it touches.
+   *
+   * The play area says where a player stands; this says what one more card
+   * would change, which is the question actually being asked at the moment of
+   * choosing. Wildcards are the interesting case: a `*.*` reaches everything,
+   * so the list is derived from what the card can stand in for rather than from
+   * its printed container.
+   */
+  private layoutSelectionGuide(
+    state: PublicState,
+    card: Card | null,
+    startY: number,
+    left: number,
+    width: number,
+  ): number {
+    for (const child of this.guideLayer.removeChildren()) {
+      killTweens(child);
+      child.destroy();
+    }
+    if (!card) return startY;
+
+    const mine = state.players.find((player) => player.id === state.me?.id)?.playArea ?? [];
+    let y = startY;
+
+    const title = heading(`${card.label} · 이 카드를 가지면`);
+    title.position.set(left, y);
+    this.guideLayer.addChild(title);
+    y += ROW_LABEL;
+
+    // A utility scores on variety alone, so no typeclass has anything to say.
+    if (card.kind === 'utility') {
+      const held = new Set(mine.filter((c) => c.kind === 'utility').map((c) => c.operation));
+      const line = body(
+        held.has(card.operation)
+          ? `이미 가진 종류입니다. 유틸리티는 서로 다른 종류 수로만 점수가 됩니다 (현재 ${held.size}종).`
+          : `유틸리티 ${held.size}종 → ${held.size + 1}종. 종류 수가 늘어야 점수가 오릅니다.`,
+        12,
+        MUTED,
+      );
+      line.position.set(left, y);
+      this.guideLayer.addChild(line);
+      return y + SLOT_ROW;
+    }
+
+    const after = [...mine, card];
+    const rows = comboDefinitions
+      .flatMap((definition) =>
+        definition.containers.map((container) => {
+          const before = coveredOperations(mine, container, definition.requires).size;
+          const now = coveredOperations(after, container, definition.requires).size;
+          return { definition, container, before, now, gained: now > before };
+        }),
+      )
+      // Only what this card actually moves. Everything else is already on the
+      // board for the player to read.
+      .filter((row) => row.gained)
+      .sort((a, b) =>
+        (a.definition.requires.length - a.now) - (b.definition.requires.length - b.now)
+        || b.definition.score - a.definition.score,
+      )
+      .slice(0, GUIDE_MAX_ROWS);
+
+    if (rows.length === 0) {
+      const line = body('이 카드로는 새로 진전되는 조합이 없습니다.', 12, MUTED);
+      line.position.set(left, y);
+      this.guideLayer.addChild(line);
+      return y + SLOT_ROW;
+    }
+
+    const cellWidth = Math.min(GUIDE_MAX_WIDTH, Math.floor((width - SLOT_GAP) / GUIDE_COLUMNS));
+    rows.forEach((row, index) => {
+      const column = index % GUIDE_COLUMNS;
+      if (column === 0 && index > 0) y += SLOT_ROW;
+      const x = left + column * (cellWidth + SLOT_GAP);
+
+      const remaining = row.definition.requires.length - row.now;
+      const done = remaining === 0;
+      const tint = toHexNumber(containerColor[row.container]);
+      const sigil = containerMeta[row.container]?.symbol ?? row.container;
+
+      const box = new Graphics()
+        .roundRect(x, y, cellWidth, 22, 3)
+        .fill({ color: tint, alpha: done ? 1 : 0.12 })
+        .stroke({ width: 1, color: tint, alpha: 1 });
+
+      const label = done
+        ? `${sigil} ${row.definition.name} 완성 +${row.definition.score}`
+        : `${sigil} ${row.definition.name} · ${remaining}개 남음`;
+      const text = body(label, 11, done ? INK : tint);
+      const room = cellWidth - 8;
+      if (text.width > room) text.scale.set(Math.max(0.6, room / text.width));
+      text.position.set(x + 4, y + 4);
+      this.guideLayer.addChild(box, text);
+    });
+
+    return y + SLOT_ROW;
+  }
+
   /** Repaints the last state, for changes the scene owns rather than the store. */
   private redraw(): void {
     if (this.lastInput) this.update(this.lastInput);
@@ -771,9 +910,9 @@ export class TableScene {
       marked: ReadonlySet<string> = new Set(),
     ): void => {
       if (cells.length === 0) return;
-      const cellWidth = Math.min(
-        SLOT_MAX_WIDTH,
-        Math.floor((available - (columns - 1) * SLOT_GAP) / columns),
+      const cellWidth = Math.max(
+        1,
+        Math.min(SLOT_MAX_WIDTH, Math.floor((available - (columns - 1) * SLOT_GAP) / columns)),
       );
 
       if (label) {

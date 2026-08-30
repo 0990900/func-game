@@ -172,7 +172,7 @@ export function GameTable({ state }: { readonly state: PublicState }) {
         modal={false}
         onClose={() => setSheet(null)}
       >
-        <ComboGuide playArea={playArea} />
+        <ComboGuide />
       </BottomSheet>
 
       <BottomSheet open={sheet === 'goal'} title="내 비밀 목표" modal={narrow} onClose={() => setSheet(null)}>

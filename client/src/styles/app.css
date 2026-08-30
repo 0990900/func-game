@@ -179,22 +179,18 @@ main.my-turn .statusbar { box-shadow: 0 0 0 2px rgba(244, 201, 93, .2), 0 8px 24
 .goal-panel p { margin-bottom: 4px; color: var(--text); }
 .goal-panel p.muted { color: var(--muted); font-size: 13px; }
 
-.combo-group { margin-top: var(--space-3); }
-.combo-container { margin: 0 0 6px; color: var(--card-color); font-size: 13px; font-weight: 900; }
-.combo-list { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; }
+/* The guide states the rules; the table states the player's progress. Nothing
+   here reacts to what anyone holds, so there are no per-state variants. */
+.combo-list { display: grid; gap: 4px; margin: var(--space-3) 0 0; padding: 0; list-style: none; }
 .combo-item { display: grid; gap: 3px; padding: 6px 8px; border: 1px solid var(--line); background: rgba(13, 20, 28, .6); }
-/* A finished combo is the thing the player is hunting; make it unmistakable. */
-.combo-item.is-complete { border-color: var(--accent); background: #1b1708; }
-/* Built on wildcards alone: it pays points but cannot be declared. */
-.combo-item.is-wildcard-only { border-color: #6b5f36; background: #14120a; }
-.combo-item.is-wildcard-only .combo-name { color: var(--muted); }
-.combo-note { color: #b9a25a; font-size: 11px; font-weight: 700; }
+/* A special combo lives in one or two containers only, which is the rule that
+   makes it special; the base ladder is open to all four. */
+.combo-item--special { border-left: 3px solid var(--accent); }
 .combo-name { display: flex; align-items: baseline; gap: var(--space-2); font-size: 13px; font-weight: 800; }
-.combo-item.is-complete .combo-name { color: var(--accent); }
 .combo-score { color: var(--muted); font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.combo-where { color: var(--muted); font-size: 11px; }
 .combo-steps { display: flex; flex-wrap: wrap; gap: 3px; }
 .combo-step { padding: 3px 6px; border: 1px solid var(--line); color: #8190a0; font-size: 11px; }
-.combo-step.complete { border-color: var(--accent); background: #29230f; color: var(--accent); }
 
 .event-log { display: grid; gap: var(--space-2); margin: 0; padding: 0; list-style: none; }
 .event-log li { display: grid; grid-template-columns: 32px 1fr; gap: var(--space-3); align-items: center; padding: 9px 0; border-bottom: 1px solid var(--line); color: #d7e0e8; line-height: 1.45; }
