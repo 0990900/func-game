@@ -6,6 +6,7 @@
 import { TableCanvas } from '../pixi/TableCanvas.tsx';
 import { statusName } from '../theme/meta.ts';
 import { actions, useGame } from '../store/gameStore.ts';
+import { scrollPageTo } from '../ui/scroll.ts';
 import type { PublicState } from '../../../src/core/types.ts';
 
 function TurnTrack({ state }: { readonly state: PublicState }) {
@@ -81,7 +82,18 @@ export function GameTable({ state }: { readonly state: PublicState }) {
           </p>
           <div className="actions">
             <button type="button" onClick={actions.submitPick}>이 카드로 결정</button>
-            <button type="button" className="secondary" onClick={actions.clearPick}>선택 취소</button>
+            <button
+              type="button"
+              className="secondary"
+              onClick={() => {
+                actions.clearPick();
+                // Choosing scrolled down to the market; cancelling undoes that,
+                // so the hand is back where it was picked from.
+                scrollPageTo(0);
+              }}
+            >
+              선택 취소
+            </button>
           </div>
         </section>
       )}

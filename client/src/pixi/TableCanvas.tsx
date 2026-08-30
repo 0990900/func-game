@@ -11,22 +11,12 @@ import { TableScene } from './TableScene.ts';
 import { loadTableTextures, waitForFonts } from './assets.ts';
 import { actions, gameStore } from '../store/gameStore.ts';
 import { palette, toHexNumber } from '../theme/tokens.ts';
+import { scrollPageTo, stickyClearance } from '../ui/scroll.ts';
 
-/**
- * Brings the market row into view. Only on narrow screens: on a desktop the
- * whole table is already visible and moving the page would be disorienting.
- */
+/** Brings the market row into view — the next step once a hand card is chosen. */
 function revealMarket(host: HTMLElement, marketTop: number): void {
-  if (window.innerWidth > 760) return;
-
-  // The status bar is sticky, so scrolling the market to y=0 puts it behind it.
-  // Measure rather than assume: its height changes when the phase line wraps.
-  const statusBar = document.querySelector('.statusbar');
-  const clearance = (statusBar?.getBoundingClientRect().height ?? 0) + 12;
-
-  const top = host.getBoundingClientRect().top + window.scrollY + marketTop - clearance;
-  const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
-  window.scrollTo({ top: Math.max(0, top), behavior: reduced ? 'auto' : 'smooth' });
+  const top = host.getBoundingClientRect().top + window.scrollY + marketTop;
+  scrollPageTo(top - stickyClearance());
 }
 
 export function TableCanvas() {
