@@ -16,6 +16,7 @@ import { containerMeta, statusName } from '../theme/meta.ts';
 import { containerColor, palette, toHexNumber, utilityColor, wildcardColor } from '../theme/tokens.ts';
 import { containers, createDeck, utilities } from '../../../src/core/cards.ts';
 import { comboDefinitions, coveredOperations, scoringCombos } from '../../../src/core/combos.ts';
+import { scorePlayer } from '../../../src/core/scoring.ts';
 import { isNarrow } from '../ui/viewport.ts';
 import type { Card, ContainerName, PublicPlayer, PublicState, Reveal } from '../../../src/core/types.ts';
 
@@ -876,12 +877,29 @@ export class TableScene {
     }
 
     const after = [...mine, card];
+    // Only the highest base tier in a container scores, so finishing Functor
+    // when Apply is already built is worth nothing. What actually scores after
+    // taking this card is the only honest answer to "what does this get me".
+    const scoringAfter = new Set(scoringCombos(after).map((combo) => `${combo.container}:${combo.name}`));
+    // A claim is gone once anyone has declared it, so the point is off the table.
+    const taken = new Set(state.players.flatMap((player) => player.claims));
+
     const rows = comboDefinitions
       .flatMap((definition) =>
         definition.containers.map((container) => {
           const before = coveredOperations(mine, container, definition.requires).size;
           const now = coveredOperations(after, container, definition.requires).size;
-          return { definition, container, before, now, gained: now > before };
+          const key = `${container}:${definition.name}`;
+          return {
+            definition,
+            container,
+            before,
+            now,
+            gained: now > before,
+            // Complete, but a higher tier in this container already outranks it.
+            outranked: now === definition.requires.length && !scoringAfter.has(key),
+            claimed: taken.has(key),
+          };
         }),
       )
       // Only what this card actually moves. Everything else is already on the
@@ -900,6 +918,22 @@ export class TableScene {
       return y + SLOT_ROW;
     }
 
+    // One number for the card as a whole. Per-combo figures cannot be added up
+    // — two tiers of the same container do not both pay — so the delta of the
+    // actual score is the only total that is true.
+    // Claims are held constant: taking a card cannot award one on its own, so
+    // the difference is exactly what the cards themselves are worth.
+    const worth = (playArea: readonly Card[]): number => scorePlayer({ playArea: [...playArea], claims: [] }).total;
+    const delta = worth(after) - worth(mine);
+    const summary = body(
+      delta > 0 ? `이 카드로 공개 점수 +${delta}` : '이 카드로 늘어나는 점수는 없습니다',
+      11,
+      delta > 0 ? ACCENT : MUTED,
+    );
+    summary.position.set(left, y);
+    this.guideLayer.addChild(summary);
+    y += 18;
+
     // A narrow block runs one to a line rather than squeezing two.
     const columns = width >= GUIDE_MIN_WIDTH * 2 ? GUIDE_COLUMNS : 1;
     const cellWidth = Math.min(
@@ -913,18 +947,26 @@ export class TableScene {
 
       const remaining = row.definition.requires.length - row.now;
       const done = remaining === 0;
+      // Completing something that earns nothing is not a win, and filling it in
+      // like one would be a lie. It stays outlined and says why.
+      const pays = done && !row.outranked;
       const tint = toHexNumber(containerColor[row.container]);
       const sigil = containerMeta[row.container]?.symbol ?? row.container;
 
       const box = new Graphics()
         .roundRect(x, y, cellWidth, 22, 3)
-        .fill({ color: tint, alpha: done ? 1 : 0.12 })
-        .stroke({ width: 1, color: tint, alpha: 1 });
+        .fill({ color: tint, alpha: pays ? 1 : 0.12 })
+        .stroke({ width: 1, color: tint, alpha: row.outranked ? 0.5 : 1 });
 
-      const label = done
-        ? `${sigil} ${row.definition.name} 완성 +${row.definition.score}`
-        : `${sigil} ${row.definition.name} · ${remaining}개 남음`;
-      const text = body(label, 11, done ? INK : tint);
+      const label = !done
+        ? `${sigil} ${row.definition.name} · ${remaining}개 남음`
+        : row.outranked
+          ? `${sigil} ${row.definition.name} 완성 · 점수 없음`
+          : row.claimed
+            ? `${sigil} ${row.definition.name} +${row.definition.score} · Claim 선점됨`
+            : `${sigil} ${row.definition.name} 완성 +${row.definition.score}`;
+      const text = body(label, 11, pays ? INK : tint);
+      text.alpha = row.outranked ? 0.75 : 1;
       const room = cellWidth - 8;
       if (text.width > room) text.scale.set(Math.max(0.6, room / text.width));
       text.position.set(x + 4, y + 4);
