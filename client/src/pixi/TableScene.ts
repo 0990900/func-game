@@ -22,9 +22,11 @@ const GAP = 12;
 const PAD = 16;
 /** Chips snap to a column grid so their left edges line up down the rows. */
 const CHIP_GAP = 6;
-const CHIP_COLUMN = 74;
+/* Operation names are short now that the container is named once per row, so
+   the columns can be too — three fit across a phone. */
+const CHIP_COLUMN = 52;
 /** Width of the group label that names the container a row belongs to. */
-const GROUP_LABEL_WIDTH = 84;
+const GROUP_LABEL_WIDTH = 74;
 /** A full hand. Cards shrink a little to keep it on one row when they nearly fit. */
 const HAND_SIZE = 5;
 /** Narrowest a fanned card's visible strip may get and still show its emblem. */
