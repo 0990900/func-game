@@ -7,7 +7,8 @@ export interface UtilityScore {
   readonly count: number;
 }
 
-const utilityOperations = (cards: readonly Card[]): ReadonlySet<string> =>
+/** The distinct utility operations held. Utility scores on this count alone. */
+export const utilityOperations = (cards: readonly Card[]): ReadonlySet<string> =>
   new Set(cards.filter((card) => card.kind === 'utility').map((card) => card.operation));
 
 export function scoreUtilities(cards: readonly Card[]): UtilityScore {

@@ -20,6 +20,7 @@ import type { SheetName } from './Dock.tsx';
 import { eventIcon, scoreSummary, statusName } from '../theme/meta.ts';
 import { actions, useGame } from '../store/gameStore.ts';
 import { useIsNarrow } from '../ui/useIsNarrow.ts';
+import { bindKeys } from '../ui/keyboard.ts';
 import type { Card, PublicState } from '../../../src/core/types.ts';
 
 /**
@@ -147,17 +148,9 @@ export function GameTable({ state }: { readonly state: PublicState }) {
     if (narrow && selectedCardId && sheet && sheet !== 'combos') setSheet(null);
   }, [narrow, selectedCardId, sheet]);
 
-  // Escape backs out of one thing at a time: an open sheet first, since that is
-  // what the player just opened, and only then the card they were holding.
-  // A sheet closes itself, so this only has to cover the card.
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent): void => {
-      if (event.key !== 'Escape' || sheet) return;
-      actions.clearPick();
-    };
-    document.addEventListener('keydown', onKeyDown);
-    return () => document.removeEventListener('keydown', onKeyDown);
-  }, [sheet]);
+  // Number keys pick cards and Escape backs out; both live in one place so
+  // there is a single answer to what a key does.
+  useEffect(bindKeys, []);
 
   const goal = state.me?.goal ?? null;
   const playArea = mySeat?.playArea ?? [];

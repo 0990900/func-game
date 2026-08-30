@@ -1,6 +1,6 @@
 import { Option } from 'effect';
 import { actionOrder, goalScore, CARDS_PER_PLAYER, TURN_LIMIT_MS } from './rules.ts';
-import { scorePlayer } from './scoring.ts';
+import { scorePlayer, utilityOperations } from './scoring.ts';
 import type {
   FinalScore,
   Player,
@@ -26,7 +26,16 @@ function finalScores(room: Room): FinalScore[] {
     .map((p) => {
       const base = scorePlayer(p);
       const goal = goalScore(p);
-      return { playerId: p.id, name: p.name, ...base, goalScore: goal, total: base.total + goal };
+      return {
+        playerId: p.id,
+        name: p.name,
+        ...base,
+        utilityKinds: utilityOperations(p.playArea).size,
+        claims: p.claims,
+        goal: p.goal,
+        goalScore: goal,
+        total: base.total + goal,
+      };
     })
     .sort((a, b) => b.total - a.total);
 }

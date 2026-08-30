@@ -201,8 +201,6 @@ export const actions = {
   startGame: () => send('start_game'),
   restartGame: () => send('restart_game'),
   chooseGoal: (goalId: string) => send('choose_goal', { goalId }),
-  claim: (container: string, name: string) => send('claim', { container, name }),
-  finishClaim: () => send('finish_claim'),
 
   selectCard: (cardId: string) =>
     set((s) => {
@@ -234,6 +232,18 @@ export const actions = {
         ? { selectedMarketId: cardId, previewMarketId: null }
         : { previewMarketId: cardId, selectedMarketId: null };
     }),
+
+  /**
+   * Sets both halves of a pick outright.
+   *
+   * The tap actions walk a two-step reveal because a fanned card is mostly
+   * covered and a first tap has to mean "let me look". A keypress has no such
+   * problem — the key names the card — so it says what it means directly.
+   */
+  setPick: (cardId: string, marketCardId: string | null) => set({
+    selectedCardId: cardId, selectedMarketId: marketCardId,
+    previewCardId: null, previewMarketId: null,
+  }),
 
   clearPick: () => set({
     selectedCardId: null, selectedMarketId: null,

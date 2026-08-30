@@ -55,6 +55,8 @@ const MARKET_GAP = 32;
 const MARKET_OVERLAP = 0.52;
 /** Narrowest a market card's visible strip may get and still be tappable. */
 const MARKET_MIN_STEP = 30;
+/** Number keys for the top row, in the order the cards are drawn. */
+const KEY_HINTS = ['1', '2', '3', '4', '5'];
 /** How far a chosen card lifts clear of the ones it overlaps. */
 const FAN_LIFT = 16;
 /** The guide answers one question, so it stays short enough to read at a glance. */
@@ -445,6 +447,9 @@ export class TableScene {
       y,
       seen,
       faceDown: studying,
+      // A shortcut nobody can see is a shortcut nobody uses, and the numbers
+      // are only true while the row is the player's to act on.
+      keyHints: myTurn,
       selectedIds: new Set([selectedCardId, selectedMarketId].filter((id): id is string => Boolean(id))),
       raisedIds: new Set([previewCardId, previewMarketId].filter((id): id is string => Boolean(id))),
       // Five cards rarely fit side by side, so they overlap and spread to fill —
@@ -543,6 +548,8 @@ export class TableScene {
     selectedIds: ReadonlySet<string>;
     /** Show every card in this row as its type rather than its face. */
     faceDown?: boolean;
+    /** Number the cards, matching the keys that select them. */
+    keyHints?: boolean;
     /** Lifted above its neighbours to be read, without being chosen. */
     raisedIds?: ReadonlySet<string>;
     /** Overlap the cards like a held hand instead of laying them out in a grid. */
@@ -550,7 +557,7 @@ export class TableScene {
   }): number {
     const {
       layer, title, left, width, cards, y, seen, selectedIds,
-      raisedIds = new Set<string>(), fan = false, faceDown = false,
+      raisedIds = new Set<string>(), fan = false, faceDown = false, keyHints = false,
     } = options;
     // Detach only: the card sprites in here are reused and must not be destroyed.
     layer.removeChildren();
@@ -640,6 +647,19 @@ export class TableScene {
         moveTo(sprite, target);
       }
       this.lastSeen.set(card.id, { ...target });
+
+      if (keyHints && index < KEY_HINTS.length) {
+        const hint = body(KEY_HINTS[index]!, 10, TEXT);
+        // Bottom-left: the card's own colour, glyph and name all live along the
+        // top and left edges, and a fanned card is covered from the right, so
+        // this corner is the part of every card that stays visible.
+        hint.position.set(target.x + 8, target.y + cardHeight - 18);
+        // Above every card in the row. The fan sorts by zIndex, and a hint left
+        // at the default sat under the card overlapping its own.
+        hint.zIndex = cards.length + 2;
+        hint.alpha = 0.75;
+        layer.addChild(hint);
+      }
     });
 
     if (fan) layer.sortableChildren = true;

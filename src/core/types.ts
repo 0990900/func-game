@@ -149,10 +149,24 @@ export interface ScoreBreakdown {
   readonly total: number;
 }
 
+/**
+ * The final score, and how it was arrived at.
+ *
+ * A total tells a player they lost; the working tells them why, which is what
+ * they need to play differently next time. Secret goals are secret only while
+ * the game runs, so the goal itself is revealed here alongside its score.
+ */
 export interface FinalScore extends ScoreBreakdown {
   readonly playerId: string;
   readonly name: string;
+  /** The combos that actually paid — the highest base tier per container, plus specials. */
   readonly combos: readonly Combo[];
+  /** How many different utility operations were held. The score follows from this alone. */
+  readonly utilityKinds: number;
+  /** Combos this player declared, in the order they were declared. */
+  readonly claims: readonly string[];
+  /** Revealed now that the game is over. Null if the player never chose one. */
+  readonly goal: Goal | null;
   readonly goalScore: number;
 }
 

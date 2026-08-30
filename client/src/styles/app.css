@@ -462,3 +462,18 @@ main.is-drafting .table-canvas { position: absolute; inset: 0; }
 .chart-legend li.is-me { color: var(--text); font-weight: 700; }
 .chart-legend b { color: var(--text); font-variant-numeric: tabular-nums; }
 .chart-swatch { width: 10px; height: 10px; border-radius: 2px; }
+
+/* The working behind a final score. Collapsed by default: four expanded
+   breakdowns would bury the standings the player came to read. */
+.working { grid-column: 1 / -1; margin-top: var(--space-2); }
+.working summary { cursor: pointer; color: var(--muted); font-size: 12px; font-weight: 700; }
+.working summary:hover { color: var(--text); }
+.working dl { display: grid; gap: var(--space-2); margin: var(--space-3) 0 0; }
+.working dt { color: var(--accent); font-size: 13px; font-weight: 800; }
+.working dd { margin: 0 0 var(--space-2); color: #d7e0e8; font-size: 12px; line-height: 1.5; }
+.working dd p.muted { margin: 4px 0 0; font-size: 11px; }
+.working-list { display: grid; gap: 2px; margin: 0 0 4px; padding: 0; list-style: none; }
+.working-list li { display: flex; justify-content: space-between; gap: var(--space-3); padding: 3px 6px; border: 1px solid var(--line); }
+.working-list b { font-variant-numeric: tabular-nums; }
+.working-claims { display: flex; flex-wrap: wrap; gap: 4px; }
+.working-claims .chip { padding: 2px 6px; border: 1px solid var(--line); font-size: 11px; }
