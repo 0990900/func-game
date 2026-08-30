@@ -135,8 +135,15 @@ function announce(previous: PublicState | null, next: PublicState): void {
   // The event log is authoritative about what just happened, and its newest
   // entry is the one this broadcast carries.
   const latest = next.events[0];
-  if (!latest || latest.playerId !== meId) return;
+  if (!latest) return;
   if (latest.id === previous?.events[0]?.id) return;
+
+  // Someone else laying a card is the same sound as laying one yourself — the
+  // table does not know whose hand it was.
+  if (latest.playerId !== meId) {
+    if (latest.type === 'pick' || latest.type === 'market') sound.play('opponent');
+    return;
+  }
 
   if (latest.type === 'claim') {
     // How many were declared together, read off the state rather than out of
@@ -247,8 +254,9 @@ export const actions = {
   kickPlayer: (playerId: string) => send('kick_player', { playerId }),
   chooseGoal: (goalId: string) => send('choose_goal', { goalId }),
 
-  selectCard: (cardId: string) =>
-    set((s) => {
+  selectCard: (cardId: string) => {
+    sound.play('select');
+    return set((s) => {
       // Tapping the chosen card again puts it back.
       if (s.selectedCardId === cardId) {
         return {
@@ -265,10 +273,12 @@ export const actions = {
             previewCardId: cardId, selectedCardId: null,
             selectedMarketId: null, previewMarketId: null,
           };
-    }),
+    });
+  },
 
-  selectMarket: (cardId: string) =>
-    set((s) => {
+  selectMarket: (cardId: string) => {
+    sound.play('select');
+    return set((s) => {
       if (s.selectedMarketId === cardId) return { selectedMarketId: null, previewMarketId: null };
       if (!isNarrow()) return { selectedMarketId: cardId, previewMarketId: null };
       // Narrow: the market is fanned too, so reveal first and commit on the
@@ -276,7 +286,8 @@ export const actions = {
       return s.previewMarketId === cardId
         ? { selectedMarketId: cardId, previewMarketId: null }
         : { previewMarketId: cardId, selectedMarketId: null };
-    }),
+    });
+  },
 
   /**
    * Sets both halves of a pick outright.

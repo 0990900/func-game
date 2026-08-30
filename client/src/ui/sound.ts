@@ -25,8 +25,12 @@ export type Cue =
   | 'draw'
   /** The turn became ours. The one sound worth hearing from another tab. */
   | 'turn'
+  /** A card was picked up to look at, before anything is committed. */
+  | 'select'
   /** A card went to the play area. */
   | 'place'
+  /** Someone else's card went to their play area. */
+  | 'opponent'
   /** A card was traded for one in the market. */
   | 'swap'
   /** A combo was declared. The count says how many at once. */
@@ -64,9 +68,22 @@ const SAMPLES: Partial<Record<Cue, readonly string[]>> = {
   // Off the deck, onto the table, and away into the market: three different
   // things happening to a card, so three different recordings of one.
   draw: ['card-slide-1', 'card-slide-2', 'card-slide-3'],
+  select: ['card-slide-5'],
   place: ['card-place-1', 'card-place-2', 'card-place-3', 'card-place-4'],
+  // The same recordings: a card landing is a card landing, whoever laid it.
+  opponent: ['card-place-1', 'card-place-2', 'card-place-3', 'card-place-4'],
   swap: ['card-shove-1', 'card-shove-2'],
 };
+
+/**
+ * The soonest another player's card may be heard after the last one.
+ *
+ * Bots act 450-850ms apart, and three of them in succession would otherwise
+ * stack into a rattle. This is a floor on the gap, not a volume: the sound is
+ * the one the player asked for, only never twice at once.
+ */
+const OPPONENT_GAP_MS = 220;
+let lastOpponent = 0;
 
 const SAMPLE_GAIN = 0.55;
 
@@ -306,7 +323,10 @@ function notesFor(cue: Cue, count: number): Note[] {
         { hz: semitone(-5), at: 0.14, seconds: 0.12, gain: 0.045, type: 'triangle' },
         { hz: semitone(2), at: 0.23, seconds: 0.16, gain: 0.045, type: 'triangle' },
       ];
+    case 'select':
+      return [{ hz: semitone(-19), at: 0, seconds: 0.05, gain: 0.04, type: 'square' }];
     case 'place':
+    case 'opponent':
       // Short, low and dry: a card meeting the table, not a chime.
       return [{ hz: semitone(-24), at: 0, seconds: 0.07, gain: 0.07, type: 'square' }];
     case 'swap':
@@ -335,6 +355,11 @@ export const sound = {
   play(cue: Cue, count = 1): void {
     const ctx = audio();
     if (!ctx) return;
+    if (cue === 'opponent') {
+      const now = performance.now();
+      if (now - lastOpponent < OPPONENT_GAP_MS) return;
+      lastOpponent = now;
+    }
     try {
       if (sample(ctx, cue)) return;
       for (const note of notesFor(cue, count)) tone(ctx, note);
