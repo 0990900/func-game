@@ -40,6 +40,12 @@ export interface GameState {
   toasts: Toast[];
   myTurnAnnounced: boolean;
   /**
+   * Cards in the top row show their type instead of their face. A study mode,
+   * not a game state: it survives turns and is nobody's business but this
+   * player's, so it never reaches the server.
+   */
+  showSignatures: boolean;
+  /**
    * Server clock minus this device's, from the last state received. Turn
    * deadlines are stamped on the server, so a device whose clock is off would
    * otherwise run the countdown out early or never.
@@ -58,6 +64,7 @@ const initial: GameState = {
   previewMarketId: null,
   toasts: [],
   myTurnAnnounced: false,
+  showSignatures: false,
   clockOffset: 0,
 };
 
@@ -157,6 +164,8 @@ async function connect(open: () => Promise<GameRoom>): Promise<void> {
 const send = (type: string, payload?: unknown): void => room?.send(type, payload);
 
 export const actions = {
+  toggleSignatures: () => set((current) => ({ showSignatures: !current.showSignatures })),
+
   host: (name: string) => connect(() => createRoom(name, handlers)),
   join: (roomId: string, name: string) => connect(() => joinRoom(roomId.trim(), name, handlers)),
 
@@ -182,6 +191,7 @@ export const actions = {
   },
 
   startGame: () => send('start_game'),
+  restartGame: () => send('restart_game'),
   chooseGoal: (goalId: string) => send('choose_goal', { goalId }),
   claim: (container: string, name: string) => send('claim', { container, name }),
   finishClaim: () => send('finish_claim'),

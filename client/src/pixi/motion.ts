@@ -69,3 +69,22 @@ export function pulse(target: { alpha: number }): gsap.core.Tween {
 }
 
 export const killTweens = (target: object): void => { gsap.killTweensOf(target); };
+
+/**
+ * Turns a card over: squash to nothing, swap the side, and open again.
+ *
+ * The swap happens at the midpoint, where the card has no width, so the two
+ * sides are never both visible. Under reduced motion both halves collapse to
+ * zero and the swap still runs, which is why it is a callback rather than
+ * something the caller does before or after.
+ */
+export function flip(
+  target: { scale: { x: number } },
+  swap: () => void,
+): gsap.core.Timeline {
+  const half = seconds(0.13);
+  return gsap.timeline()
+    .to(target.scale, { x: 0, duration: half, ease: 'power2.in' })
+    .call(swap)
+    .to(target.scale, { x: 1, duration: half, ease: 'power2.out' });
+}

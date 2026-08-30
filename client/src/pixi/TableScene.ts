@@ -9,7 +9,7 @@
 import { Application, Container, Graphics, Rectangle, Text, TilingSprite } from 'pixi.js';
 import { CARD_WIDTH, MIN_CARD_WIDTH, CardSprite, cardColor, metricsFor } from './CardSprite.ts';
 import { EffectLayer } from './effects.ts';
-import { dealIn, killTweens, moveTo, pulse } from './motion.ts';
+import { dealIn, flip, killTweens, moveTo, pulse } from './motion.ts';
 import type { Point } from './motion.ts';
 import type { TableTextures } from './assets.ts';
 import { containerMeta, statusName } from '../theme/meta.ts';
@@ -167,6 +167,8 @@ export interface TableInput {
   /** Raised for a look, not yet chosen. Narrow screens only. */
   readonly previewCardId: string | null;
   readonly previewMarketId: string | null;
+  /** Study mode: the top row shows each card's type instead of its face. */
+  readonly showSignatures: boolean;
 }
 
 const heading = (text: string, color = MUTED) =>
@@ -345,7 +347,9 @@ export class TableScene {
   /** Rebuilds layout from state, reusing every sprite whose card is still on the table. */
   update(input: TableInput): number {
     this.lastInput = input;
-    const { state, selectedCardId, selectedMarketId, previewCardId, previewMarketId } = input;
+    const {
+      state, selectedCardId, selectedMarketId, previewCardId, previewMarketId, showSignatures,
+    } = input;
     // Sprites bake their size, so a resize that changes card geometry has to
     // rebuild them rather than reuse cards drawn at the old dimensions.
     const geometryKey = `${this.cardWidth()}x${metricsFor(this.width).height}`;
@@ -384,8 +388,12 @@ export class TableScene {
     // Card size stays fixed for the row whatever it holds, so a card does not
     // resize as it moves between the draw and the market. Only the overlap
     // adapts: with no drawn card the market has the whole row to spread into.
+    // Overlapping is fine for choosing — a strip of each card is enough to
+    // tell them apart. It is not fine for reading, and the back of a card is
+    // nothing but reading, so study mode lays them out in full and wraps.
+    const studying = showSignatures;
     const row = this.cardRowMetrics(cardsWidth);
-    const gap = state.drawn ? row.gap : 0;
+    const gap = state.drawn && !studying ? row.gap : 0;
     const strips = Math.max(0, state.market.length - 1);
     const room = cardsWidth - gap - row.cardWidth * (state.drawn ? 2 : 1);
     const step = strips > 0
@@ -398,7 +406,7 @@ export class TableScene {
             card: state.drawn,
             onTap: this.callbacks.onSelectHand,
             enabled: myTurn,
-            advance: row.cardWidth,
+            ...(studying ? {} : { advance: row.cardWidth }),
           }]
         : []),
       // Market cards are inert until the drawn card is chosen — the two steps.
@@ -409,7 +417,7 @@ export class TableScene {
         // The row is one row, but the drawn card is mine and the market is
         // everyone's; a gap says which is which without a second label.
         gapBefore: index === 0 && state.drawn ? gap : 0,
-        advance: step,
+        ...(studying ? {} : { advance: step }),
       })),
     ];
 
@@ -421,10 +429,12 @@ export class TableScene {
       cards: rowCards,
       y,
       seen,
+      faceDown: studying,
       selectedIds: new Set([selectedCardId, selectedMarketId].filter((id): id is string => Boolean(id))),
       raisedIds: new Set([previewCardId, previewMarketId].filter((id): id is string => Boolean(id))),
-      // Five cards rarely fit side by side, so they overlap and spread to fill.
-      fan: true,
+      // Five cards rarely fit side by side, so they overlap and spread to fill —
+      // except while their backs are showing, when every one has to be legible.
+      fan: !studying,
     });
 
     // What the player is looking at right now. A preview counts — on a phone the
@@ -516,6 +526,8 @@ export class TableScene {
     y: number;
     seen: Set<string>;
     selectedIds: ReadonlySet<string>;
+    /** Show every card in this row as its type rather than its face. */
+    faceDown?: boolean;
     /** Lifted above its neighbours to be read, without being chosen. */
     raisedIds?: ReadonlySet<string>;
     /** Overlap the cards like a held hand instead of laying them out in a grid. */
@@ -523,7 +535,7 @@ export class TableScene {
   }): number {
     const {
       layer, title, left, width, cards, y, seen, selectedIds,
-      raisedIds = new Set<string>(), fan = false,
+      raisedIds = new Set<string>(), fan = false, faceDown = false,
     } = options;
     // Detach only: the card sprites in here are reused and must not be destroyed.
     layer.removeChildren();
@@ -566,6 +578,13 @@ export class TableScene {
       seen.add(card.id);
       sprite.setSelected(selectedIds.has(card.id));
       sprite.setEnabled(enabled);
+      // A card already in place turns over; one arriving this frame is simply
+      // dealt showing the requested side, with no flip to see.
+      if (existed) {
+        if (sprite.isFaceDown() !== faceDown) flip(sprite, () => sprite.setFaceDown(faceDown));
+      } else {
+        sprite.setFaceDown(faceDown);
+      }
 
       // Previewed and chosen cards both come forward; only the chosen one is
       // outlined, so a look is never mistaken for a decision.

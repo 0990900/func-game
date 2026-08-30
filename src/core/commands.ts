@@ -8,6 +8,7 @@ import type { Player, Room } from './types.ts';
 export type GameCommand =
   | { readonly _tag: 'JoinRoom'; readonly name: string }
   | { readonly _tag: 'StartGame'; readonly playerId: string }
+  | { readonly _tag: 'RestartGame'; readonly playerId: string }
   | { readonly _tag: 'ChooseGoal'; readonly playerId: string; readonly goalId: string }
   | { readonly _tag: 'Pick'; readonly playerId: string; readonly cardId: string; readonly marketCardId: string | null }
   | { readonly _tag: 'Claim'; readonly playerId: string; readonly container: string; readonly name: string }
@@ -18,6 +19,7 @@ export type GameCommand =
 export const Command = {
   joinRoom: (name: string): GameCommand => ({ _tag: 'JoinRoom', name }),
   startGame: (playerId: string): GameCommand => ({ _tag: 'StartGame', playerId }),
+  restartGame: (playerId: string): GameCommand => ({ _tag: 'RestartGame', playerId }),
   chooseGoal: (playerId: string, goalId: string): GameCommand => ({ _tag: 'ChooseGoal', playerId, goalId }),
   pick: (playerId: string, cardId: string, marketCardId: string | null = null): GameCommand =>
     ({ _tag: 'Pick', playerId, cardId, marketCardId }),
@@ -68,6 +70,10 @@ function apply(deps: RuleDeps, draft: Room, command: GameCommand): Player | null
     case 'StartGame':
       if (command.playerId !== draft.hostPlayerId) throw new RuleError({ message: '방장만 시작할 수 있습니다.' });
       Rules.startGame(deps, draft);
+      return null;
+    case 'RestartGame':
+      if (command.playerId !== draft.hostPlayerId) throw new RuleError({ message: '방장만 재시작할 수 있습니다.' });
+      Rules.restartGame(deps, draft);
       return null;
     case 'ChooseGoal':
       Rules.chooseGoal(deps, draft, command.playerId, command.goalId);

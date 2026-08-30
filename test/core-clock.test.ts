@@ -142,3 +142,43 @@ test('progress reports the real end condition, not rounds and picks', () => {
   assert.equal(after.turnsCompleted, 1);
   assert.equal(after.myCards, 1, 'the viewer played the first turn');
 });
+
+test('restarting keeps the table and clears the game', () => {
+  const table = fourPlayerDraft();
+  const seatsBefore = table.room.players.map((player) => ({ id: player.id, name: player.name, bot: player.bot }));
+  const host = table.room.hostPlayerId;
+
+  assert.match(table.expectError(Command.restartGame(host)).message, /끝난 뒤에만/);
+
+  while (table.room.phase === 'draft') playTurn(table);
+  assert.equal(table.room.phase, 'finished');
+
+  table.run(Command.restartGame(host));
+
+  // The table is the same people in the same seats, under the same host.
+  assert.equal(table.room.hostPlayerId, host);
+  assert.deepEqual(
+    [...table.room.players].map((p) => ({ id: p.id, name: p.name, bot: p.bot })).sort((a, b) => a.id.localeCompare(b.id)),
+    [...seatsBefore].sort((a, b) => a.id.localeCompare(b.id)),
+  );
+
+  // And nothing of the last game is left.
+  assert.equal(table.room.phase, 'goal');
+  assert.equal(table.room.players.every((p) => p.playArea.length === 0), true);
+  assert.equal(table.room.players.every((p) => p.claims.length === 0), true);
+  assert.deepEqual(table.room.claimedCombos, []);
+  assert.equal(table.room.scoreLog.length, 0);
+  assert.equal(table.room.market.length, 4);
+  assert.equal(table.room.players.every((p) => p.goalOptions.length === 2), true);
+  // Humans choose again; bots take the first as they do on a fresh start.
+  assert.equal(table.room.players.filter((p) => !p.bot).every((p) => p.goal === null), true);
+});
+
+test('only the host may restart', () => {
+  const table = fourPlayerDraft();
+  while (table.room.phase === 'draft') playTurn(table);
+
+  const other = table.room.players.find((player) => player.id !== table.room.hostPlayerId)!;
+  assert.match(table.expectError(Command.restartGame(other.id)).message, /방장만/);
+  assert.equal(table.room.phase, 'finished', 'a refused restart changes nothing');
+});

@@ -9,6 +9,7 @@
 import { Container, Graphics, Sprite, Text, Texture } from 'pixi.js';
 import type { TextStyleOptions } from 'pixi.js';
 import { cardFace } from '../theme/meta.ts';
+import { cardBack } from '../theme/signatures.ts';
 import { containerColor, palette, toHexNumber, utilityColor, wildcardColor } from '../theme/tokens.ts';
 import type { Card, ContainerName } from '../../../src/core/types.ts';
 
@@ -71,6 +72,9 @@ export class CardSprite extends Container {
   private readonly highlight = new Graphics();
   /** Dims a card that cannot be played, without making it see-through. */
   private readonly veil = new Graphics();
+  /** The type behind the card. Built once and shown by turning it over. */
+  private readonly back = new Container();
+  private faceDown = false;
   private selected = false;
   private enabled = true;
 
@@ -153,6 +157,8 @@ export class CardSprite extends Container {
     hint.position.set(11, metrics.hintY);
     this.addChild(hint);
 
+    this.buildBack(tint, face.operationLabel);
+
     // Above the card's own contents, below nothing else.
     this.addChild(this.veil);
     this.drawVeil();
@@ -164,6 +170,67 @@ export class CardSprite extends Container {
       // A tap that was really the end of a scroll must not choose a card.
       if (this.enabled && !this.suppressed()) this.onTap?.(this.card);
     });
+  }
+
+  /**
+   * The back: what the operation is, as a type.
+   *
+   * Built with the card rather than on demand, because a flip that has to lay
+   * out text first is a flip that stutters. It costs four Text objects on a
+   * sprite that already has five.
+   */
+  private buildBack(tint: number, title: string): void {
+    const { signature, note } = cardBack(this.card);
+    const width = this.cardWidth;
+    const { height } = this.metrics;
+
+    const panel = new Graphics()
+      .roundRect(0, 0, width, height, RADIUS)
+      .fill(0x0d141c)
+      .stroke({ width: 1, color: tint });
+
+    const name = new Text({
+      text: title,
+      style: label({ fontSize: 13, fontWeight: '800', fill: tint, wordWrap: true, wordWrapWidth: width - 22 }),
+    });
+    name.position.set(11, 12);
+
+    // Serif for the signature: the arrows and single letters of a type are what
+    // this is for, and they read badly in the UI face.
+    const type = new Text({
+      text: signature,
+      style: label({
+        fontFamily: 'Georgia, serif',
+        fontSize: 13,
+        fontWeight: '700',
+        wordWrap: true,
+        wordWrapWidth: width - 22,
+        lineHeight: 18,
+      }),
+    });
+    type.position.set(11, 38);
+
+    const explain = new Text({
+      text: note,
+      style: label({ fontSize: 11, fill: 0xa9b6c3, wordWrap: true, wordWrapWidth: width - 22, lineHeight: 15 }),
+    });
+    explain.position.set(11, Math.min(height - 46, 38 + type.height + 10));
+
+    this.back.addChild(panel, name, type, explain);
+    this.back.visible = false;
+    this.addChild(this.back);
+  }
+
+  /** Turns the card over. Returns true when the side actually changed. */
+  setFaceDown(faceDown: boolean): boolean {
+    if (this.faceDown === faceDown) return false;
+    this.faceDown = faceDown;
+    this.back.visible = faceDown;
+    return true;
+  }
+
+  isFaceDown(): boolean {
+    return this.faceDown;
   }
 
   private drawFrame(tint: number): void {

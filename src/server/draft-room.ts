@@ -60,6 +60,7 @@ export class DraftRoom extends Room {
     this.autoDispose = true;
 
     this.onMessage('start_game', (client) => this.dispatch(client, Command.startGame));
+    this.onMessage('restart_game', (client) => this.dispatch(client, Command.restartGame));
     this.onMessage('choose_goal', (client, message: GoalMessage) =>
       this.dispatch(client, (playerId) => Command.chooseGoal(playerId, message?.goalId)));
     this.onMessage('pick', (client, message: PickMessage) =>

@@ -72,11 +72,11 @@ export function TableCanvas() {
 
       const draw = (): void => {
         const {
-          state, selectedCardId, selectedMarketId, previewCardId, previewMarketId,
+          state, selectedCardId, selectedMarketId, previewCardId, previewMarketId, showSignatures,
         } = gameStore.getState();
         if (!state || !scene || !app) return;
         const content = scene.update({
-          state, selectedCardId, selectedMarketId, previewCardId, previewMarketId,
+          state, selectedCardId, selectedMarketId, previewCardId, previewMarketId, showSignatures,
         });
         // The canvas fills its grid row; the scene scrolls inside it when the
         // content is taller, so the page itself never grows.

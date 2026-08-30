@@ -113,7 +113,36 @@ export function startGame(deps: RuleDeps, room: Room): void {
   // The legacy core branched on `players.length < 2` with identical bodies;
   // collapsed here because the branch was provably behavior-free.
   addBotsToFour(deps, room);
+  deal(deps, room);
+}
 
+/**
+ * Plays again with the same people.
+ *
+ * Everything about the game is cleared and everything about the table is kept:
+ * the seats, the names, who is a bot, and who is host. Leaving and remaking a
+ * room would have meant every player re-entering a new code, which is a lot of
+ * ceremony for "again".
+ */
+export function restartGame(deps: RuleDeps, room: Room): void {
+  if (room.phase !== 'finished') throw ruleError('게임이 끝난 뒤에만 재시작할 수 있습니다.');
+
+  for (const player of room.players) {
+    player.playArea = [];
+    player.claims = [];
+    player.goal = null;
+    player.goalOptions = [];
+  }
+  room.claimedCombos = [];
+  room.pendingClaim = null;
+  room.scoreLog = [];
+  room.events = [];
+  room.phase = 'lobby';
+  deal(deps, room);
+}
+
+/** Shuffles, opens the market, and puts a pair of goals in front of everyone. */
+function deal(deps: RuleDeps, room: Room): void {
   room.players = shuffle(room.players, deps.random);
   room.deck = shuffle(createDeck(), deps.random);
   room.market = room.deck.splice(0, 4);

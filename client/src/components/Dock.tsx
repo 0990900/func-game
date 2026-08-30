@@ -35,6 +35,7 @@ export function Dock({
   readonly openSheet: SheetName | null;
   readonly onOpenSheet: (sheet: SheetName | null) => void;
 }) {
+  const showSignatures = useGame((s) => s.showSignatures);
   const selectedCardId = useGame((s) => s.selectedCardId);
   const selectedMarketId = useGame((s) => s.selectedMarketId);
   const claiming = Boolean(me?.canFinishClaim);
@@ -82,6 +83,17 @@ export function Dock({
         </div>
       ) : (
         <nav className="dock-triggers" aria-label="참조 정보">
+          {/* Turning the cards over is reference, not a move, so it lives with
+              the other reference controls rather than beside the pick buttons. */}
+          <button
+            type="button"
+            className={`dock-trigger${showSignatures ? ' is-open' : ''}`}
+            aria-pressed={showSignatures}
+            onClick={() => actions.toggleSignatures()}
+          >
+            <span aria-hidden="true">↻</span>
+            수식
+          </button>
           {TRIGGERS.map((trigger) => (
             <button
               key={trigger.name}
