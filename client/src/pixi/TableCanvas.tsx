@@ -84,12 +84,13 @@ export function TableCanvas() {
         scene.setViewport(host.clientWidth || 640, available, content);
         app.renderer.resize(host.clientWidth || 640, available);
 
-        // Choosing brings the market into view; letting go of the choice —
-        // by button, by tapping the felt, by Escape, or by playing the card —
-        // brings the hand back.
+        // Choosing used to scroll the market into view, back when it was a
+        // second row below the drawn card. They are one row now, so a choice
+        // needs no scroll at all — the cards being chosen between are already
+        // on screen. Letting go of a choice still returns to the top, which is
+        // a no-op on any screen tall enough to hold the table.
         const choice = selectedCardId ?? previewCardId;
-        if (selectedCardId && !lastChoice) scene.revealMarket();
-        else if (!choice && lastChoice) scene.scrollToTop();
+        if (!choice && lastChoice) scene.scrollToTop();
         lastChoice = choice;
       };
 

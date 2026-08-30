@@ -71,7 +71,7 @@ export function pushToast(text: string): void {
 /** Title, toast and a short beep when the turn becomes ours — ported from the legacy client. */
 function announceMyTurn(): void {
   document.title = '내 턴! · FP Draft';
-  pushToast('내 턴입니다. 손패에서 한 장을 선택하세요.');
+  pushToast('내 턴입니다. 뽑은 카드를 선택하세요.');
   try {
     const audio = new AudioContext();
     const oscillator = audio.createOscillator();

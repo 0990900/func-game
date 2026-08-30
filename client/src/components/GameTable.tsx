@@ -91,7 +91,7 @@ function TableFallback({ state }: { readonly state: PublicState }) {
         onSelect={actions.selectCard}
       />
       <CardButtons
-        label="시장 (손패를 고른 뒤 교환할 카드 선택)"
+        label="시장 (뽑은 카드를 고른 뒤 교환할 카드 선택)"
         cards={state.market}
         selectedId={selectedMarketId}
         previewId={previewMarketId}

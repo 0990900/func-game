@@ -14,42 +14,52 @@ import type { Point } from './motion.ts';
 import type { TableTextures } from './assets.ts';
 import { containerMeta, statusName } from '../theme/meta.ts';
 import { containerColor, palette, toHexNumber, utilityColor, wildcardColor } from '../theme/tokens.ts';
-import { containers, createDeck } from '../../../src/core/cards.ts';
-import { coveredOperations, scoringCombos } from '../../../src/core/combos.ts';
+import { containers, createDeck, utilities } from '../../../src/core/cards.ts';
+import { comboDefinitions, coveredOperations, scoringCombos } from '../../../src/core/combos.ts';
 import { isNarrow } from '../ui/viewport.ts';
-import type { Card, ContainerName, PublicState, Reveal } from '../../../src/core/types.ts';
+import type { Card, ContainerName, PublicPlayer, PublicState, Reveal } from '../../../src/core/types.ts';
 
 const GAP = 12;
 const PAD = 16;
-/** Chips snap to a column grid so their left edges line up down the rows. */
-const CHIP_GAP = 6;
-/* A container's whole slot set goes on one line, so every play area is the
-   same shape and they can be compared down the column. Six is the widest set
-   any container has. */
-const SLOT_COUNT = 6;
-/** Combo names are long, so their row holds fewer — but all of them equal. */
-const COMBO_COLUMNS = 3;
 /** Cells stop growing past this; a stretched badge is not more readable. */
 const SLOT_MAX_WIDTH = 104;
-const COMBO_MAX_WIDTH = 168;
-/** Above this the table splits: cards on the left, play areas on the right. */
-const TWO_COLUMN_WIDTH = 900;
+/** The card row stops spreading here; five cards strung across 1900px read as
+    five unrelated cards rather than one row to choose from. */
+const CARD_ROW_MAX_WIDTH = 760;
+
 const SLOT_GAP = 4;
 const SLOT_ROW = 26;
 /** Just the container's sigil: the row's position and colour say the rest. */
 const GROUP_LABEL_WIDTH = 30;
+
+/** Below this the play area stacks its two regions instead of splitting them. */
+const AREA_SPLIT_WIDTH = 620;
+const TYPECLASS_COLUMNS = 2;
+const TYPECLASS_MAX_WIDTH = 150;
+
+
 /** A full hand. Cards shrink a little to keep it on one row when they nearly fit. */
 const HAND_SIZE = 5;
 /** Narrowest a fanned card's visible strip may get and still show its emblem. */
 const FAN_MIN_STEP = 40;
 const ROW_LABEL = 22;
-const CHIP_HEIGHT = 30;
+/** Widest the gap between the drawn card and the market gets. */
+const MARKET_GAP = 32;
+/** How much of a market card the next one covers, when there is room to choose.
+    The market is a stack to pick from, so it reads as one group; the drawn card
+    stands alone. */
+const MARKET_OVERLAP = 0.52;
+/** Narrowest a market card's visible strip may get and still be tappable. */
+const MARKET_MIN_STEP = 30;
 
 const LINE = toHexNumber(palette.line);
 const MUTED = toHexNumber(palette.muted);
 const TEXT = toHexNumber(palette.text);
 const ACCENT = toHexNumber(palette.accent);
 const EMPTY_SLOT = toHexNumber(palette.muted);
+/** Text on an inverted cell. Selection is shown by filling, not by hue: every
+    hue in the palette already means a container, a utility or a joker. */
+const INK = toHexNumber(palette.bg);
 
 export interface TableCallbacks {
   readonly onSelectHand: (card: Card) => void;
@@ -81,17 +91,42 @@ const CONTAINER_SLOTS: Record<string, string[]> = (() => {
   return slots;
 })();
 
-/** One cell of a container's row: a finished combo, or a slot still open. */
+/* A container's whole slot set goes on one line, so every play area is the
+   same shape and they can be compared down the column. Counted from the deck
+   rather than written down: giving List a `zero` card would otherwise wrap its
+   row and break the one-row-per-container rule the comparison rests on. */
+const SLOT_COUNT = Math.max(
+  ...containers.map((container) => CONTAINER_SLOTS[container]?.length ?? 0),
+);
+
+/* What each region of a play area actually draws, rather than what it is
+   handed. Sizing from the content is what keeps the two regions adjacent: a
+   share of the width left a quarter of the screen of dead felt between them. */
+const CARDS_REGION_WIDTH =
+  GROUP_LABEL_WIDTH + 6 + SLOT_COUNT * SLOT_MAX_WIDTH + (SLOT_COUNT - 1) * SLOT_GAP;
+const TYPECLASS_REGION_WIDTH =
+  TYPECLASS_COLUMNS * TYPECLASS_MAX_WIDTH + (TYPECLASS_COLUMNS - 1) * SLOT_GAP;
+const AREA_COLUMN_GAP = GAP * 2;
+const PLAY_AREA_WIDTH = CARDS_REGION_WIDTH + AREA_COLUMN_GAP + TYPECLASS_REGION_WIDTH;
+
+/** One cell of a container's row: an operation this player does or does not have. */
 interface SlotCell {
   readonly text: string;
-  readonly state: 'combo' | 'owned' | 'covered' | 'empty';
+  readonly state: 'owned' | 'covered' | 'empty';
   /** Held more than once. Worth a mark, not a word: a second copy of the same
    *  operation adds nothing to a combo. */
   readonly duplicate?: boolean;
-  /** Cells this one occupies. A combo earns two; a slot always takes one. */
-  readonly span?: number;
-  /** Declared, and so locked away from everyone else for the rest of the game. */
-  readonly claimed?: boolean;
+}
+
+/** One card in the top row, with the rule that governs it. */
+interface RowCard {
+  readonly card: Card;
+  readonly onTap: (card: Card) => void;
+  readonly enabled: boolean;
+  /** Extra space before this card, to separate it from the ones before it. */
+  readonly gapBefore?: number;
+  /** How far the next card sits from this one. Less than a card width overlaps. */
+  readonly advance?: number;
 }
 
 export interface TableInput {
@@ -121,8 +156,8 @@ const body = (text: string, size = 13, color = TEXT) =>
 export class TableScene {
   private readonly root = new Container();
   private readonly background: TilingSprite | Graphics;
-  private readonly handLayer = new Container();
-  private readonly marketLayer = new Container();
+  /** The drawn card and the market, in one row. */
+  private readonly cardRowLayer = new Container();
   private readonly areaLayer = new Container();
   /** Row headings are stable objects: recreating them every update leaked Text. */
   private readonly rowLabels = new Map<Container, Text>();
@@ -140,7 +175,6 @@ export class TableScene {
   private lastRevealId: string | null = null;
   private lastCurrentPlayerId: string | null = null;
   /** Y of the market row inside the canvas, so the page can scroll to it. */
-  private marketTop = 0;
   /** Card geometry the cached sprites were built at. */
   private geometryKey = '';
   /** Visible height of the canvas, and how tall the laid-out table is. */
@@ -150,6 +184,16 @@ export class TableScene {
   /** Asks the host whether the pointer has been dragged, so a scroll is not a tap. */
   private wasDragged: () => boolean = () => false;
 
+  /**
+   * The typeclass a player tapped, or null. Selecting one marks the operations
+   * it needs across every card row, which is how the ladder from Apply to Monad
+   * becomes visible on the table instead of only in a reference sheet.
+   */
+  private selectedCombo: string | null = null;
+
+  /** The last input drawn, so a toggle can repaint without the store. */
+  private lastInput: TableInput | null = null;
+
   constructor(app: Application, textures: TableTextures, callbacks: TableCallbacks, width: number) {
     this.textures = textures;
     this.callbacks = callbacks;
@@ -157,7 +201,7 @@ export class TableScene {
     this.background = textures.tile
       ? new TilingSprite({ texture: textures.tile, width, height: 1 })
       : new Graphics();
-    this.root.addChild(this.background, this.handLayer, this.marketLayer, this.areaLayer);
+    this.root.addChild(this.background, this.cardRowLayer, this.areaLayer);
     app.stage.addChild(this.root);
     // Added last so a card in flight draws above the table, not under it.
     this.effects = new EffectLayer(app.stage, textures.particles);
@@ -205,11 +249,6 @@ export class TableScene {
   }
 
   /** Brings the market row to the top of the visible area. */
-  revealMarket(): void {
-    this.scrollY = this.marketTop - PAD;
-    this.clampScroll();
-  }
-
   private clampScroll(): void {
     const overflow = Math.max(0, this.contentHeight - this.viewportHeight);
     this.scrollY = Math.max(0, Math.min(overflow, this.scrollY));
@@ -217,27 +256,48 @@ export class TableScene {
   }
 
   /** Where the market row starts, in canvas pixels. */
-  getMarketTop(): number {
-    return this.marketTop;
-  }
 
   /**
    * Card width for the current table width. A hand of five wraps to a stranded
    * second row at full size on a desktop column, so cards give up a few pixels
    * to stay on one line — but never below the width their text needs.
    */
+  /**
+   * The one row of cards, measured as a whole.
+   *
+   * Two cards are shown whole — the drawn one and the last of the market — with
+   * the market's others overlapping between them and a gap separating the two
+   * groups. Sizing the cards without that shape in mind is what pushed the
+   * market off the right edge of a phone: the row was measured as five cards
+   * fanned evenly, which is not what it draws.
+   */
+  private cardRowMetrics(regionWidth: number = this.width - PAD * 2): {
+    cardWidth: number; gap: number; step: number;
+  } {
+    const available = Math.max(1, regionWidth);
+    const gap = Math.max(12, Math.min(MARKET_GAP, Math.round(available * 0.06)));
+    // Market cards that overlap rather than being shown whole.
+    const strips = Math.max(0, HAND_SIZE - 2);
+
+    const fitsRow = (available - gap - strips * MARKET_MIN_STEP) / 2;
+    const cardWidth = Math.max(
+      1,
+      Math.min(available, Math.max(MIN_CARD_WIDTH, Math.min(CARD_WIDTH, Math.floor(fitsRow)))),
+    );
+
+    // Whatever is left over is shared between the strips, up to the overlap the
+    // design asks for. A card you can tap beats a card you cannot, so the strip
+    // is allowed below its floor rather than letting the row run off the edge.
+    const room = available - gap - cardWidth * 2;
+    const step = strips > 0
+      ? Math.max(1, Math.min(Math.round(cardWidth * MARKET_OVERLAP), Math.floor(room / strips)))
+      : cardWidth;
+
+    return { cardWidth, gap, step };
+  }
+
   private cardWidth(regionWidth: number = this.width - PAD * 2): number {
-    const available = regionWidth;
-    const fitsFive = (available - (HAND_SIZE - 1) * GAP) / HAND_SIZE;
-    const preferred = fitsFive >= MIN_CARD_WIDTH ? Math.min(CARD_WIDTH, Math.floor(fitsFive)) : CARD_WIDTH;
-    // A fanned hand must also fit: the last card's right edge is the card's own
-    // width past the strips of the four before it.
-    const fitsFan = available - (HAND_SIZE - 1) * FAN_MIN_STEP;
-    const width = Math.max(MIN_CARD_WIDTH, Math.min(preferred, fitsFan));
-    // On a very narrow screen even the minimum will not fit, and the row is
-    // clipped with no way to scroll to what is off the edge. Legibility gives
-    // way to reachability: a card you can tap beats a card you cannot.
-    return Math.max(1, Math.min(width, available));
+    return this.cardRowMetrics(regionWidth).cardWidth;
   }
 
   destroy(): void {
@@ -250,7 +310,9 @@ export class TableScene {
   }
 
   /** Rebuilds layout from state, reusing every sprite whose card is still on the table. */
-  update({ state, selectedCardId, selectedMarketId, previewCardId, previewMarketId }: TableInput): number {
+  update(input: TableInput): number {
+    this.lastInput = input;
+    const { state, selectedCardId, selectedMarketId, previewCardId, previewMarketId } = input;
     // Sprites bake their size, so a resize that changes card geometry has to
     // rebuild them rather than reuse cards drawn at the old dimensions.
     const geometryKey = `${this.cardWidth()}x${metricsFor(this.width).height}`;
@@ -267,53 +329,68 @@ export class TableScene {
     const myTurn = Boolean(state.me?.isMyTurn);
     const seen = new Set<string>();
 
-    // Wide enough, and the cards and the play areas sit side by side instead of
-    // the table running down the middle of an empty screen.
-    const split = this.width >= TWO_COLUMN_WIDTH;
-    const cardsWidth = split
-      ? Math.min(520, Math.round(this.width * 0.42)) - PAD
-      : this.width - PAD * 2;
+    // The cards sit beside the play areas only when both fit at the size they
+    // actually want. The old rule split at a fixed width and handed each side a
+    // share, which on a 1440 screen left an empty column under the cards and
+    // squeezed the areas; below that it stacked them and wasted nothing.
+    const fullWidth = this.width - PAD * 2;
+    const split = fullWidth >= CARD_ROW_MAX_WIDTH + GAP * 2 + PLAY_AREA_WIDTH;
+    const cardsWidth = Math.min(fullWidth, CARD_ROW_MAX_WIDTH);
     const areasLeft = split ? PAD + cardsWidth + GAP * 2 : PAD;
-    const areasWidth = split ? this.width - areasLeft - PAD : this.width - PAD * 2;
+    const areasWidth = split ? this.width - areasLeft - PAD : fullWidth;
 
     let y = PAD;
 
-    // One card, face up, for whoever is on turn — there are no hands any more.
+    // The drawn card and the four market cards are one row: five cards, always,
+    // so there is nothing for a second row to hold.
+    // Card size stays fixed for the row whatever it holds, so a card does not
+    // resize as it moves between the draw and the market. Only the overlap
+    // adapts: with no drawn card the market has the whole row to spread into.
+    const row = this.cardRowMetrics(cardsWidth);
+    const gap = state.drawn ? row.gap : 0;
+    const strips = Math.max(0, state.market.length - 1);
+    const room = cardsWidth - gap - row.cardWidth * (state.drawn ? 2 : 1);
+    const step = strips > 0
+      ? Math.max(1, Math.min(Math.round(row.cardWidth * MARKET_OVERLAP), Math.floor(room / strips)))
+      : row.cardWidth;
+
+    const rowCards: RowCard[] = [
+      ...(state.drawn
+        ? [{
+            card: state.drawn,
+            onTap: this.callbacks.onSelectHand,
+            enabled: myTurn,
+            advance: row.cardWidth,
+          }]
+        : []),
+      // Market cards are inert until the drawn card is chosen — the two steps.
+      ...state.market.map((card, index) => ({
+        card,
+        onTap: this.callbacks.onSelectMarket,
+        enabled: myTurn && Boolean(selectedCardId),
+        // The row is one row, but the drawn card is mine and the market is
+        // everyone's; a gap says which is which without a second label.
+        gapBefore: index === 0 && state.drawn ? gap : 0,
+        advance: step,
+      })),
+    ];
+
     y = this.layoutRow({
-      layer: this.handLayer,
-      title: state.me?.isMyTurn ? '내 차례 · 뽑은 카드' : '뽑은 카드',
+      layer: this.cardRowLayer,
+      title: state.me?.isMyTurn ? '내 차례 · 뽑은 카드와 시장' : '뽑은 카드와 시장',
       left: PAD,
       width: cardsWidth,
-      cards: state.drawn ? [state.drawn] : [],
+      cards: rowCards,
       y,
       seen,
-      selectedId: selectedCardId,
-      raisedId: previewCardId,
-      enabled: myTurn,
-      onTap: this.callbacks.onSelectHand,
+      selectedIds: new Set([selectedCardId, selectedMarketId].filter((id): id is string => Boolean(id))),
+      raisedIds: new Set([previewCardId, previewMarketId].filter((id): id is string => Boolean(id))),
+      // Five cards rarely fit side by side, so they overlap and spread to fill.
       fan: true,
     });
 
-    this.marketTop = y + GAP;
-    y = this.layoutRow({
-      layer: this.marketLayer,
-      title: '시장',
-      left: PAD,
-      width: cardsWidth,
-      cards: state.market,
-      y: this.marketTop,
-      seen,
-      selectedId: selectedMarketId,
-      raisedId: previewMarketId,
-      // Market cards are inert until the drawn card is chosen — the two steps.
-      enabled: myTurn && Boolean(selectedCardId),
-      onTap: this.callbacks.onSelectMarket,
-      // Narrow screens fan the market too, so the table fits without scrolling.
-      fan: isNarrow(),
-    });
-
     const areasEnd = this.layoutPlayAreas(state, split ? PAD : y + GAP, areasLeft, areasWidth);
-    y = Math.max(y, areasEnd);
+    y = split ? Math.max(y, areasEnd) : areasEnd;
 
     // A card that left the hand or market is now a chip; fly the old sprite to
     // its new home before the chip takes over.
@@ -380,19 +457,23 @@ export class TableScene {
     title: string;
     left: number;
     width: number;
-    cards: readonly Card[];
+    /**
+     * Each card carries its own handler and enabled state: the drawn card and
+     * the market share this row but not their rules, and the count is fixed at
+     * five, so one row holds them both.
+     */
+    cards: readonly RowCard[];
     y: number;
     seen: Set<string>;
-    selectedId: string | null;
+    selectedIds: ReadonlySet<string>;
     /** Lifted above its neighbours to be read, without being chosen. */
-    raisedId?: string | null;
-    enabled: boolean;
-    onTap: (card: Card) => void;
+    raisedIds?: ReadonlySet<string>;
     /** Overlap the cards like a held hand instead of laying them out in a grid. */
     fan?: boolean;
   }): number {
     const {
-      layer, title, left, width, cards, y, seen, selectedId, raisedId = null, enabled, onTap, fan = false,
+      layer, title, left, width, cards, y, seen, selectedIds,
+      raisedIds = new Set<string>(), fan = false,
     } = options;
     // Detach only: the card sprites in here are reused and must not be destroyed.
     layer.removeChildren();
@@ -408,29 +489,45 @@ export class TableScene {
     const top = y + ROW_LABEL;
     const cardHeight = metricsFor(width).height;
     const cardWidth = this.cardWidth(width);
-    const step = fan ? this.fanStep(cards.length, cardWidth, width) : cardWidth + GAP;
+    // Each card says how far the next one sits, so one row can hold a card that
+    // stands alone and a group that overlaps. Anything that does not say falls
+    // back to the fan, which spreads to fill whatever room is left.
+    const extraGaps = cards.reduce((sum, entry) => sum + (entry.gapBefore ?? 0), 0);
+    const step = fan
+      ? this.fanStep(cards.length, cardWidth, width - extraGaps)
+      : cardWidth + GAP;
+
+    const positions: number[] = [];
+    let cursor = 0;
+    for (const entry of cards) {
+      cursor += entry.gapBefore ?? 0;
+      positions.push(cursor);
+      cursor += entry.advance ?? step;
+    }
     const perRow = fan
       ? cards.length || 1
       : Math.max(1, Math.floor((width + GAP) / (cardWidth + GAP)));
 
-    cards.forEach((card, index) => {
+    cards.forEach(({ card, onTap, enabled }, index) => {
       const existed = this.sprites.has(card.id);
       const sprite = this.spriteFor(card, onTap);
       seen.add(card.id);
-      sprite.setSelected(card.id === selectedId);
+      sprite.setSelected(selectedIds.has(card.id));
       sprite.setEnabled(enabled);
 
       // Previewed and chosen cards both come forward; only the chosen one is
       // outlined, so a look is never mistaken for a decision.
-      const raised = sprite.isSelected() || card.id === raisedId;
+      const raised = sprite.isSelected() || raisedIds.has(card.id);
 
       const column = index % perRow;
       const row = Math.floor(index / perRow);
+      // A wrapped grid still steps by column; a single row uses the walk above.
+      const offset = row === 0 ? positions[index]! : column * step;
       // A raised card lifts clear of its neighbours — further when fanned,
       // where the lift is what separates it from the cards it overlaps.
       const lift = raised ? (fan ? 16 : 5) : 0;
       const target: Point = {
-        x: left + column * step,
+        x: left + offset,
         y: top + row * (cardHeight + GAP) - lift,
       };
       layer.addChild(sprite);
@@ -442,8 +539,11 @@ export class TableScene {
         // Each card stays tappable at its own slot, even while another is drawn
         // over it. Without this a raised card swallows the strips of the cards
         // to its right and they cannot be reached at all.
-        const isLast = index === cards.length - 1;
-        sprite.hitArea = new Rectangle(0, 0, isLast ? cardWidth : step, cardHeight);
+        // Each card stays tappable across the strip its neighbour leaves free,
+        // so an overlapped card can still be reached at its own left edge.
+        const next = positions[index + 1];
+        const strip = next === undefined ? cardWidth : Math.min(cardWidth, next - positions[index]!);
+        sprite.hitArea = new Rectangle(0, 0, Math.max(1, strip), cardHeight);
       }
 
       if (!existed) {
@@ -473,13 +573,29 @@ export class TableScene {
       child.destroy();
     }
     let y = startY;
+    const narrow = width < AREA_SPLIT_WIDTH;
+    const me = state.players.find((player) => player.id === state.me?.id) ?? null;
+
+    // Narrow screens put my typeclasses above everything: what I am building
+    // towards outranks a record of what four seats have already played.
+    if (narrow && me) {
+      const label = heading('타입클래스');
+      label.position.set(left, y);
+      this.areaLayer.addChild(label);
+      y = this.layoutTypeclasses(me, y + ROW_LABEL, left, width) + GAP;
+    }
 
     const label = heading('플레이 영역');
     label.position.set(left, y);
     this.areaLayer.addChild(label);
     y += ROW_LABEL;
 
-    for (const player of state.players) {
+    // My own board first on a narrow screen, then everyone else in seat order.
+    const order = narrow && me
+      ? [me, ...state.players.filter((player) => player.id !== me.id)]
+      : state.players;
+
+    for (const player of order) {
       const isMe = player.id === state.me?.id;
       const isCurrent = state.currentPlayerId === player.id;
 
@@ -496,18 +612,99 @@ export class TableScene {
       // Where a card flying to this player should land.
       this.seatAnchor.set(player.id, { x: left + 40, y: y + 12 });
 
-      if (player.playArea.length === 0) {
-        const empty = body('아직 없음', 12, MUTED);
-        empty.position.set(left, y);
-        this.areaLayer.addChild(empty);
-        y += CHIP_HEIGHT;
+      // Cards and typeclasses are two regions, never one. Claiming Apply does
+      // not spend the map card, so nothing a player holds may vanish from the
+      // card region when a combo forms beside it.
+      if (narrow) {
+        const cardsEnd = this.layoutChips(player, y, left, width);
+        // Mine are already at the top of the screen; everyone else carries
+        // their own beneath their cards.
+        y = isMe ? cardsEnd : this.layoutTypeclasses(player, cardsEnd, left, width);
       } else {
-        y = this.layoutChips(player.playArea, new Set(player.claims), y, left, width);
+        const cardsWidth = Math.min(CARDS_REGION_WIDTH, width - TYPECLASS_REGION_WIDTH - AREA_COLUMN_GAP);
+        const typeclassWidth = Math.min(TYPECLASS_REGION_WIDTH, width - cardsWidth - AREA_COLUMN_GAP);
+        y = Math.max(
+          this.layoutChips(player, y, left, cardsWidth),
+          this.layoutTypeclasses(player, y, left + cardsWidth + AREA_COLUMN_GAP, typeclassWidth),
+        );
       }
       y += GAP;
     }
     this.lastCurrentPlayerId = state.currentPlayerId;
     return y;
+  }
+
+  /**
+   * Every typeclass in the game, and how far this player has got with each.
+   *
+   * The whole ladder is listed rather than only what has been achieved: the
+   * point of the game is to learn that Apply comes before Applicative comes
+   * before Monad, and a list that only appears once you have already built
+   * something teaches nobody anything. Unreached ones are dimmed, exactly as
+   * an empty card slot is.
+   *
+   * Tapping one toggles it. While it is on, the operations it asks for are
+   * marked in every card row, so `Monad` lights up map, ap, pure and chain
+   * wherever they sit.
+   */
+  private layoutTypeclasses(player: PublicPlayer, startY: number, left: number, width: number): number {
+    const claims = new Set(player.claims);
+    const built = scoringCombos(player.playArea);
+    const columns = TYPECLASS_COLUMNS;
+    const cellWidth = Math.min(
+      TYPECLASS_MAX_WIDTH,
+      Math.floor((width - (columns - 1) * SLOT_GAP) / columns),
+    );
+
+    let y = startY;
+
+    comboDefinitions.forEach((definition, index) => {
+      // How many containers this player reached it in: `Monad x2` is Monad in
+      // two containers, which is worth saying because each scores separately.
+      const reached = definition.containers.filter((container) =>
+        claims.has(`${container}:${definition.name}`)
+        || built.some((combo) => combo.container === container && combo.name === definition.name),
+      );
+      const has = reached.length > 0;
+      const selected = this.selectedCombo === definition.name;
+
+      const column = index % columns;
+      if (column === 0 && index > 0) y += SLOT_ROW;
+      const x = left + column * (cellWidth + SLOT_GAP);
+
+      // Selected chips invert too, for the same reason the cells they mark do.
+      const colour = selected ? INK : has ? TEXT : EMPTY_SLOT;
+      const box = new Graphics()
+        .roundRect(x, y, cellWidth, 22, 3)
+        .fill({ color: selected || has ? TEXT : 0x000000, alpha: selected ? 1 : has ? 0.12 : 0.14 })
+        .stroke({ width: 1, color: selected ? TEXT : colour, alpha: has || selected ? 1 : 0.55 });
+
+      const label = reached.length > 1 ? `${definition.name} x${reached.length}` : definition.name;
+      const text = body(label, 11, colour);
+      text.alpha = has || selected ? 1 : 0.9;
+      const room = cellWidth - 8;
+      if (text.width > room) text.scale.set(Math.max(0.6, room / text.width));
+      text.position.set(x + Math.round((cellWidth - text.width * text.scale.x) / 2), y + 4);
+
+      box.eventMode = 'static';
+      box.cursor = 'pointer';
+      box.hitArea = new Rectangle(x, y, cellWidth, 22);
+      box.on('pointertap', () => {
+        // A drag that ends over a chip is a scroll, not a choice.
+        if (this.wasDragged()) return;
+        this.selectedCombo = selected ? null : definition.name;
+        this.redraw();
+      });
+
+      this.areaLayer.addChild(box, text);
+    });
+
+    return y + SLOT_ROW;
+  }
+
+  /** Repaints the last state, for changes the scene owns rather than the store. */
+  private redraw(): void {
+    if (this.lastInput) this.update(this.lastInput);
   }
 
   /**
@@ -546,29 +743,38 @@ export class TableScene {
   }
 
   /**
-   * A play area, as rows of equal cells.
+   * What a player holds, as one row of equal cells per container.
    *
-   * Combos and slots never share a row. A combo name is several times longer
-   * than an operation, so mixing them meant cells of two widths side by side
-   * and a grid that only looked like one. Each row now holds one kind of thing,
-   * every cell in it the same size, and all rows start at the same left edge.
+   * Only cards live here. Combos moved out to their own region, because they
+   * are not made of the same stuff: a combo name is several times longer than
+   * an operation, so the two could never share a cell width, and folding a
+   * combo's operations away made owned cards disappear the moment they started
+   * paying off. The slots are fixed by the deck, so every player's rows line up
+   * and the shape of what someone is missing can be read across the table.
    */
-  private layoutChips(
-    cards: readonly Card[],
-    claims: ReadonlySet<string>,
-    startY: number,
-    left: number,
-    width: number,
-  ): number {
+  private layoutChips(player: PublicPlayer, startY: number, left: number, width: number): number {
+    const cards = player.playArea;
     const contentLeft = left + GROUP_LABEL_WIDTH + 6;
     const available = width - GROUP_LABEL_WIDTH - 6;
 
+    // The operations the selected typeclass asks for, per container. Nothing is
+    // marked when nothing is selected.
+    const wanted = comboDefinitions.find((definition) => definition.name === this.selectedCombo);
+
     let y = startY;
 
-    const gridRow = (label: string, tint: number, cells: readonly SlotCell[], columns: number): void => {
+    const gridRow = (
+      label: string,
+      tint: number,
+      cells: readonly SlotCell[],
+      columns: number,
+      marked: ReadonlySet<string> = new Set(),
+    ): void => {
       if (cells.length === 0) return;
-      const cap = columns === COMBO_COLUMNS ? COMBO_MAX_WIDTH : SLOT_MAX_WIDTH;
-      const cellWidth = Math.min(cap, Math.floor((available - (columns - 1) * SLOT_GAP) / columns));
+      const cellWidth = Math.min(
+        SLOT_MAX_WIDTH,
+        Math.floor((available - (columns - 1) * SLOT_GAP) / columns),
+      );
 
       if (label) {
         const heading = body(label, 12, tint);
@@ -581,37 +787,35 @@ export class TableScene {
         if (column === 0 && index > 0) y += SLOT_ROW;
         const x = contentLeft + column * (cellWidth + SLOT_GAP);
 
-        // A claimed combo is declared and locked; one merely built could still
-        // be taken by whoever declares it first. Owned, wildcard-covered and
-        // missing slots step down from there.
-        const combo = slot.state === 'combo';
+        // Held, filled by a wildcard, or still missing.
         const owned = slot.state === 'owned';
         const covered = slot.state === 'covered';
-        const colour = combo ? ACCENT : owned || covered ? tint : EMPTY_SLOT;
+        // Asked for by the typeclass the player has selected. Marked cells fill
+        // with their own row's colour and flip their text dark, so the mark
+        // never has to borrow a hue that already means something else.
+        const needed = marked.has(slot.text);
+        const colour = needed ? INK : owned || covered ? tint : EMPTY_SLOT;
 
         const box = new Graphics()
           .roundRect(x, y, cellWidth, 22, 3)
           .fill({
-            color: combo ? ACCENT : owned || covered ? tint : 0x000000,
-            alpha: combo ? (slot.claimed ? 0.34 : 0.14) : owned ? 0.16 : covered ? 0.05 : 0.14,
+            color: needed ? tint : owned || covered ? tint : 0x000000,
+            alpha: needed ? 1 : owned ? 0.16 : covered ? 0.05 : 0.14,
           })
-          .stroke({ width: combo ? 2 : 1, color: colour, alpha: combo || owned ? 1 : covered ? 0.8 : 0.55 });
+          .stroke({
+            width: 1,
+            color: needed ? tint : colour,
+            alpha: needed || owned ? 1 : covered ? 0.8 : 0.55,
+          });
 
         const text = body(slot.text, 11, colour);
-        text.alpha = combo || owned ? 1 : covered ? 0.9 : 0.9;
+        text.alpha = needed || owned ? 1 : 0.9;
         const room = cellWidth - 8;
         if (text.width > room) text.scale.set(Math.max(0.6, room / text.width));
         text.position.set(x + Math.round((cellWidth - text.width * text.scale.x) / 2), y + 4);
         this.areaLayer.addChild(box, text);
 
-        // Anything else the cell has to say is a corner mark, so one word per
-        // cell holds and the row stays scannable.
-        const mark = slot.claimed ? '★' : covered ? '✦' : null;
-        if (mark) {
-          const glyph = body(mark, 8, combo ? ACCENT : tint);
-          glyph.position.set(x + cellWidth - 9, y + 1);
-          this.areaLayer.addChild(glyph);
-        } else if (slot.duplicate) {
+        if (slot.duplicate) {
           const dot = new Graphics().circle(x + cellWidth - 5, y + 5, 2).fill({ color: tint, alpha: 0.9 });
           this.areaLayer.addChild(dot);
         }
@@ -629,27 +833,17 @@ export class TableScene {
         }
       }
       const covered = coveredOperations(cards, container, slots);
-
-      // Combos are shown beside the cards, not instead of them. Claiming Apply
-      // does not spend map — the card is still on the table, and hiding it left
-      // the row looking like the player had lost something.
-      const combos = scoringCombos(cards).filter((combo) => combo.container === container);
       const sigil = containerMeta[container]?.symbol ?? container;
       const tint = toHexNumber(containerColor[container]);
 
-      gridRow(
-        sigil,
-        tint,
-        combos.map((combo) => ({
-          text: `${combo.name} ${combo.score}`,
-          state: 'combo' as const,
-          claimed: claims.has(`${container}:${combo.name}`),
-        })),
-        COMBO_COLUMNS,
-      );
+      // A typeclass only marks the containers it can actually be built in, so
+      // selecting Foldable lights up List and leaves Maybe alone.
+      const marked = wanted?.containers.includes(container)
+        ? new Set(wanted.requires)
+        : new Set<string>();
 
       gridRow(
-        combos.length ? '' : sigil,
+        sigil,
         tint,
         slots.map((operation) => {
           const count = counts.get(operation) ?? 0;
@@ -657,32 +851,49 @@ export class TableScene {
           return { text: operation, state: covered.has(operation) ? 'covered' as const : 'empty' as const };
         }),
         SLOT_COUNT,
+        marked,
       );
     }
 
-    // Wildcards and utilities have no fixed set — a player holds whichever they
-    // drafted — so these rows appear only when there is something in them.
-    for (const [key, label] of [['joker', '✦'], ['utility', 'λ']] as const) {
-      const held = new Map<string, number>();
-      for (const card of cards) {
-        const isJoker = card.kind === 'wildcard' || card.kind === 'operation-wildcard'
-          || card.kind === 'container-wildcard';
-        if (key === 'joker' ? !isJoker : card.kind !== 'utility') continue;
-        const text = card.kind === 'utility' ? card.operation : card.label;
-        held.set(text, (held.get(text) ?? 0) + 1);
-      }
-
-      gridRow(
-        label,
-        toHexNumber(key === 'utility' ? utilityColor : wildcardColor),
-        [...held].sort((a, b) => a[0].localeCompare(b[0])).map(([text, count]) => ({
-          text,
-          state: 'owned' as const,
-          duplicate: count > 1,
-        })),
-        SLOT_COUNT,
-      );
+    // Utilities score on how many different ones you hold, so the deck's twelve
+    // get fixed slots like a container's operations do: what is missing is the
+    // whole point, and an empty row said nothing about what could fill it.
+    const utilityCounts = new Map<string, number>();
+    for (const card of cards) {
+      if (card.kind !== 'utility') continue;
+      utilityCounts.set(card.operation, (utilityCounts.get(card.operation) ?? 0) + 1);
     }
+    gridRow(
+      'λ',
+      toHexNumber(utilityColor),
+      utilities.map((operation) => {
+        const count = utilityCounts.get(operation) ?? 0;
+        return count > 0
+          ? { text: operation, state: 'owned' as const, duplicate: count > 1 }
+          : { text: operation, state: 'empty' as const };
+      }),
+      SLOT_COUNT,
+    );
+
+    // Wildcards are the exception: a player holds whichever of the fourteen they
+    // drafted, and fourteen mostly-empty cells would bury the rows that matter.
+    const jokers = new Map<string, number>();
+    for (const card of cards) {
+      const isJoker = card.kind === 'wildcard' || card.kind === 'operation-wildcard'
+        || card.kind === 'container-wildcard';
+      if (!isJoker) continue;
+      jokers.set(card.label, (jokers.get(card.label) ?? 0) + 1);
+    }
+    gridRow(
+      '✦',
+      toHexNumber(wildcardColor),
+      [...jokers].sort((a, b) => a[0].localeCompare(b[0])).map(([text, count]) => ({
+        text,
+        state: 'owned' as const,
+        duplicate: count > 1,
+      })),
+      SLOT_COUNT,
+    );
 
     return y;
   }

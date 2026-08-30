@@ -67,7 +67,7 @@ export function Dock({
       ) : deciding ? (
         <div className="dock-confirm">
           <p>
-            {selectedMarketId ? '손패 카드를 시장에 놓고 교환합니다.' : '내 플레이 영역에 놓습니다.'}
+            {selectedMarketId ? '뽑은 카드를 시장에 놓고 교환합니다.' : '내 플레이 영역에 놓습니다.'}
           </p>
           <div className="dock-actions">
             <button type="button" onClick={actions.submitPick}>이 카드로 결정</button>
