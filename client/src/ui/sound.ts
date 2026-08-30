@@ -2,8 +2,14 @@
  * The game's sounds, named rather than described.
  *
  * Callers ask for `sound.play('claim', 3)` and never touch an oscillator or a
- * buffer. What a cue is made of lives here alone, so swapping synthesis for
- * recorded samples later changes this file and nothing else.
+ * buffer. What a cue is made of lives here alone, which is what let the card
+ * sounds become recordings without a single caller changing.
+ *
+ * Cards are samples and states are synthesised, because they are different
+ * kinds of sound. A card meeting the table is friction — broadband noise with
+ * no pitch, and nothing an oscillator produces is mistakable for it. A turn
+ * starting or a clock running out is a message, and a message wants a pitch you
+ * can tell apart from the last one.
  *
  * One AudioContext for the page. The previous beep built a new one per turn,
  * and browsers cap the number a document may create — around six — after which
@@ -44,8 +50,24 @@ interface Note {
   readonly type: OscillatorType;
 }
 
+/**
+ * Recordings, by cue. Kenney's Casino Audio pack (CC0) — the card sounds most
+ * card games are built from.
+ *
+ * Several files per cue so the same card does not land identically fifteen
+ * times a game; one is picked at random each time.
+ */
+const SAMPLES: Partial<Record<Cue, readonly string[]>> = {
+  place: ['card-place-1', 'card-place-2', 'card-place-3', 'card-place-4'],
+  swap: ['card-slide-1', 'card-slide-2'],
+};
+
+const SAMPLE_GAIN = 0.55;
+
 let context: AudioContext | null = null;
 let muted = readMuted();
+/** Decoded once and kept: decoding is the expensive part, playing is not. */
+const buffers = new Map<string, AudioBuffer>();
 
 function readMuted(): boolean {
   try {
@@ -95,9 +117,51 @@ function unlock(): void {
     silence.buffer = context.createBuffer(1, 1, context.sampleRate);
     silence.connect(context.destination);
     silence.start();
+    void preload(context);
   } catch {
     context = null;
   }
+}
+
+/**
+ * Fetches and decodes every sample once.
+ *
+ * Failure is silent and per-file: a cue whose recording did not arrive falls
+ * back to its synthesised form, which is worse but is not nothing.
+ */
+async function preload(ctx: AudioContext): Promise<void> {
+  const names = Object.values(SAMPLES).flat();
+  await Promise.all(names.map(async (name) => {
+    if (buffers.has(name)) return;
+    try {
+      const response = await fetch(`${import.meta.env.BASE_URL}sounds/${name}.ogg`);
+      if (!response.ok) return;
+      buffers.set(name, await ctx.decodeAudioData(await response.arrayBuffer()));
+    } catch {
+      // Safari has historically been uneven about Vorbis; the synthesised
+      // fallback covers it rather than the cue going missing.
+    }
+  }));
+}
+
+/** Plays one recording, if it arrived. Returns whether it did. */
+function sample(ctx: AudioContext, cue: Cue): boolean {
+  const names = SAMPLES[cue];
+  if (!names?.length) return false;
+  const buffer = buffers.get(names[Math.floor(Math.random() * names.length)]!);
+  if (!buffer) return false;
+
+  const source = ctx.createBufferSource();
+  const gain = ctx.createGain();
+  source.buffer = buffer;
+  // A little detune each time. The ear notices a sound repeating exactly long
+  // before it notices one repeating nearly.
+  source.playbackRate.value = 0.94 + Math.random() * 0.12;
+  gain.gain.value = SAMPLE_GAIN;
+  source.connect(gain);
+  gain.connect(ctx.destination);
+  source.start();
+  return true;
 }
 
 /**
@@ -200,6 +264,7 @@ export const sound = {
     const ctx = audio();
     if (!ctx) return;
     try {
+      if (sample(ctx, cue)) return;
       for (const note of notesFor(cue, count)) tone(ctx, note);
     } catch {
       // A context can be closed out from under us by the browser.
