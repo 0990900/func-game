@@ -1,3 +1,6 @@
 node_modules/
 .DS_Store
 .gstack/
+
+# Sound picker served for listening tests. Not part of the game.
+client/public/dev/
