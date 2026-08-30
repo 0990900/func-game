@@ -14,6 +14,7 @@ import { useEffect, useState } from 'react';
 import { TableCanvas } from '../pixi/TableCanvas.tsx';
 import { BottomSheet } from './BottomSheet.tsx';
 import { ComboGuide } from './ComboGuide.tsx';
+import { ScoreChart } from './ScoreChart.tsx';
 import { Dock } from './Dock.tsx';
 import type { SheetName } from './Dock.tsx';
 import { eventIcon, scoreSummary, statusName } from '../theme/meta.ts';
@@ -102,25 +103,31 @@ function TableFallback({ state }: { readonly state: PublicState }) {
   );
 }
 
+/**
+ * The score, as it moved and as it stands.
+ *
+ * This used to list every card in every play area, which the table already
+ * draws and draws better — the sheet was a second, worse copy of the board.
+ * What the board cannot show is time: who led, when it changed hands, and
+ * whether a total was climbing steadily or arrived in one claim.
+ */
 function ScoreSheet({ state }: { readonly state: PublicState }) {
   return (
-    <ul className="score-list">
-      {[...state.players]
-        .sort((a, b) => b.publicScore.total - a.publicScore.total)
-        .map((player) => (
-          <li key={player.id} className={player.id === state.me?.id ? 'is-me' : undefined}>
-            <b>{player.name}{player.bot ? ' (Bot)' : ''}</b>
-            <span className="total">{player.publicScore.total}점</span>
-            <span className="muted">{scoreSummary(player.publicScore)}</span>
-            <span className="chips">
-              {player.playArea.map((card) => (
-                <span key={card.id} className="chip">{card.label}</span>
-              ))}
-              {player.playArea.length === 0 && <span className="muted">아직 없음</span>}
-            </span>
-          </li>
-        ))}
-    </ul>
+    <>
+      <ScoreChart state={state} />
+      <ul className="score-list">
+        {[...state.players]
+          .sort((a, b) => b.publicScore.total - a.publicScore.total)
+          .map((player, rank) => (
+            <li key={player.id} className={player.id === state.me?.id ? 'is-me' : undefined}>
+              <span className="rank" aria-label={`${rank + 1}위`}>{rank + 1}</span>
+              <b>{player.name}{player.bot ? ' (Bot)' : ''}</b>
+              <span className="total">{player.publicScore.total}점</span>
+              <span className="muted">{scoreSummary(player.publicScore)}</span>
+            </li>
+          ))}
+      </ul>
+    </>
   );
 }
 

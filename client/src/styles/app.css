@@ -200,6 +200,7 @@ main.my-turn .statusbar { box-shadow: 0 0 0 2px rgba(244, 201, 93, .2), 0 8px 24
 .score-list { display: grid; gap: var(--space-2); margin: 0; padding: 0; list-style: none; }
 .score-list li { display: grid; grid-template-columns: 32px 1fr auto; gap: var(--space-3); align-items: center; padding: var(--space-3); border: 1px solid var(--line); background: var(--surface-2); }
 .score-list li.is-me { border-color: var(--accent); }
+.score-list li.is-me .rank { border-color: var(--accent); color: var(--accent); }
 .score-list .rank { display: grid; place-items: center; width: 32px; height: 32px; border: 1px solid #526170; font-weight: 900; }
 .score-list .total { font-size: 20px; font-weight: 900; font-variant-numeric: tabular-nums; }
 .score-list .muted { grid-column: 1 / -1; font-size: 13px; }
@@ -444,3 +445,15 @@ main.is-drafting .table-canvas { position: absolute; inset: 0; }
   .turn-clock-bar { transition: none; }
   .turn-clock.is-urgent .turn-clock-value { animation: none; }
 }
+
+/* The score chart. `preserveAspectRatio` is left alone and the strokes are
+   non-scaling, so the lines stay one weight however wide the sheet gets. */
+.score-chart { margin-bottom: var(--space-4); }
+.score-chart svg { display: block; width: 100%; height: auto; }
+.chart-grid { stroke: var(--line); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.chart-label { fill: var(--muted); font-size: 8px; }
+.chart-legend { display: flex; flex-wrap: wrap; gap: var(--space-3); margin: var(--space-2) 0 0; padding: 0; list-style: none; font-size: 12px; color: var(--muted); }
+.chart-legend li { display: flex; align-items: center; gap: 5px; }
+.chart-legend li.is-me { color: var(--text); font-weight: 700; }
+.chart-legend b { color: var(--text); font-variant-numeric: tabular-nums; }
+.chart-swatch { width: 10px; height: 10px; border-radius: 2px; }
