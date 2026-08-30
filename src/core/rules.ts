@@ -9,7 +9,7 @@
  * rules here; corrections belong in a separate, tested change.
  */
 import { createDeck } from './cards.ts';
-import { comboKey, findCombos } from './combos.ts';
+import { claimableCombos, comboKey, findCombos, isClaimable } from './combos.ts';
 import { goals } from './goals.ts';
 import { ruleError } from './errors.ts';
 import { scoreUtilities } from './scoring.ts';
@@ -156,9 +156,9 @@ export function submitPick(
     if (!market) throw ruleError('시장에 없는 카드입니다.');
   }
 
-  const before = new Set(findCombos(p.playArea).map(comboKey));
+  const before = new Set(claimableCombos(p.playArea).map(comboKey));
   resolveTurn(deps, room, p, card, market);
-  const claimKeys = findCombos(p.playArea)
+  const claimKeys = claimableCombos(p.playArea)
     .map(comboKey)
     .filter((key) => !before.has(key) && !room.claimedCombos.includes(key));
   if (claimKeys.length) {
@@ -173,9 +173,9 @@ export function playBotTurn(deps: RuleDeps, room: Room, playerId: string): void 
   if (!player?.bot || player.id !== playerId) throw ruleError('현재 봇의 턴이 아닙니다.');
   if (!player.hand.length) throw ruleError('봇의 손패가 비어 있습니다.');
   const card = [...player.hand].sort((a, b) => botValue(deps, b, player) - botValue(deps, a, player))[0]!;
-  const before = new Set(findCombos(player.playArea).map(comboKey));
+  const before = new Set(claimableCombos(player.playArea).map(comboKey));
   resolveTurn(deps, room, player, card, null);
-  findCombos(player.playArea)
+  claimableCombos(player.playArea)
     .map(comboKey)
     .filter((key) => !before.has(key) && !room.claimedCombos.includes(key))
     .forEach((key) => awardClaim(deps, room, player, key));
@@ -254,8 +254,11 @@ export function claimCombo(deps: RuleDeps, room: Room, playerId: string, contain
     throw ruleError('지금 Claim할 수 없는 조합입니다.');
   }
   if (room.claimedCombos.includes(key)) throw ruleError('이미 Claim된 조합입니다.');
-  const possible = findCombos(p.playArea).some((c) => c.container === container && c.name === name);
-  if (!possible) throw ruleError('아직 완성되지 않은 조합입니다.');
+  const combo = findCombos(p.playArea).find((c) => c.container === container && c.name === name);
+  if (!combo) throw ruleError('아직 완성되지 않은 조합입니다.');
+  if (!isClaimable(p.playArea, combo.container, combo.requires)) {
+    throw ruleError('조커만으로는 Claim할 수 없습니다. 해당 컨테이너 카드가 최소 한 장 필요합니다.');
+  }
   awardClaim(deps, room, p, key);
   room.pendingClaim.keys = room.pendingClaim.keys.filter((candidate) => candidate !== key);
   if (!room.pendingClaim.keys.length) advanceTurn(deps, room);

@@ -1,5 +1,5 @@
 import { Option } from 'effect';
-import { comboKey, findCombos } from './combos.ts';
+import { claimableCombos, comboKey } from './combos.ts';
 import { actionOrder, goalScore } from './rules.ts';
 import { scorePlayer } from './scoring.ts';
 import type {
@@ -67,7 +67,7 @@ function project(
             && room.players[room.currentPlayerIndex]?.id === viewer.id,
           availableClaims:
             room.pendingClaim?.playerId === viewer.id
-              ? findCombos(viewer.playArea).filter(
+              ? claimableCombos(viewer.playArea).filter(
                   (combo) =>
                     room.pendingClaim!.keys.includes(comboKey(combo))
                     && !room.claimedCombos.includes(comboKey(combo)),

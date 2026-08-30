@@ -75,6 +75,30 @@ export function canBuild(cards: readonly Card[], container: ContainerName, requi
   return coveredOperations(cards, container, requires).size === requires.length;
 }
 
+/**
+ * Whether a built combo may be claimed.
+ *
+ * Wildcards fill a slot but cannot carry a claim on their own: `*.*`, `*.map`
+ * and `Either.*` are stand-ins, and a claim declares a combo you actually
+ * assembled. At least one of the combo's required operations must come from a
+ * real card of that container.
+ *
+ * Scoring is untouched — a combo held up by wildcards still pays its points. It
+ * just cannot be declared, so it cannot be locked away from anyone else.
+ */
+export function isClaimable(cards: readonly Card[], container: ContainerName, requires: readonly string[]): boolean {
+  if (!canBuild(cards, container, requires)) return false;
+  return cards.some((card) =>
+    card.kind === 'container-function'
+    && card.container === container
+    && requires.includes(card.operation));
+}
+
+/** The combos in this play area that may be claimed. */
+export function claimableCombos(cards: readonly Card[]): Combo[] {
+  return findCombos(cards).filter((combo) => isClaimable(cards, combo.container, combo.requires));
+}
+
 export function findCombos(cards: readonly Card[]): Combo[] {
   const found: Combo[] = [];
   for (const def of comboDefinitions) {

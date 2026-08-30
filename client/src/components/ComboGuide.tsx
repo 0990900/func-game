@@ -7,7 +7,7 @@
  * Alternative. Everything the rules score is listed here, derived from the
  * combo definitions rather than restated, so a new combo shows up on its own.
  */
-import { comboDefinitions, coveredOperations } from '../../../src/core/combos.ts';
+import { comboDefinitions, coveredOperations, isClaimable } from '../../../src/core/combos.ts';
 import { containerMeta, operationMeta } from '../theme/meta.ts';
 import type { Card, ComboDefinition, ContainerName } from '../../../src/core/types.ts';
 
@@ -17,6 +17,8 @@ interface Row {
   readonly definition: ComboDefinition;
   readonly covered: ReadonlySet<string>;
   readonly complete: boolean;
+  /** Built, but held up entirely by wildcards, so it cannot be declared. */
+  readonly wildcardOnly: boolean;
 }
 
 /** Every combo reachable in this container, cheapest first, with progress. */
@@ -25,23 +27,27 @@ function rowsFor(container: ContainerName, playArea: readonly Card[]): Row[] {
     .filter((definition) => definition.containers.includes(container))
     .map((definition) => {
       const covered = coveredOperations(playArea, container, definition.requires);
+      const complete = covered.size === definition.requires.length;
       return {
         key: `${container}:${definition.name}`,
         container,
         definition,
         covered,
-        complete: covered.size === definition.requires.length,
+        complete,
+        wildcardOnly: complete && !isClaimable(playArea, container, definition.requires),
       };
     });
 }
 
 function ComboRow({ row }: { readonly row: Row }) {
-  const { definition, covered, complete } = row;
+  const { definition, covered, complete, wildcardOnly } = row;
   return (
-    <li className={`combo-item${complete ? ' is-complete' : ''}`}>
+    <li className={`combo-item${complete ? ' is-complete' : ''}${wildcardOnly ? ' is-wildcard-only' : ''}`}>
       <span className="combo-name">
         {definition.name}
         <span className="combo-score">{definition.score}점</span>
+        {/* It scores, but a claim needs a real card of this container. */}
+        {wildcardOnly && <span className="combo-note">조커만 · Claim 불가</span>}
       </span>
       <span className="combo-steps">
         {definition.requires.map((operation) => (
