@@ -20,6 +20,8 @@ const GAP = 12;
 const PAD = 16;
 /** A full hand. Cards shrink a little to keep it on one row when they nearly fit. */
 const HAND_SIZE = 5;
+/** Narrowest a fanned card's visible strip may get and still show its emblem. */
+const FAN_MIN_STEP = 40;
 const ROW_LABEL = 22;
 const CHIP_HEIGHT = 30;
 
@@ -111,7 +113,11 @@ export class TableScene {
   private cardWidth(): number {
     const available = this.width - PAD * 2;
     const fitsFive = (available - (HAND_SIZE - 1) * GAP) / HAND_SIZE;
-    return fitsFive >= MIN_CARD_WIDTH ? Math.min(CARD_WIDTH, Math.floor(fitsFive)) : CARD_WIDTH;
+    const preferred = fitsFive >= MIN_CARD_WIDTH ? Math.min(CARD_WIDTH, Math.floor(fitsFive)) : CARD_WIDTH;
+    // A fanned hand must also fit: the last card's right edge is the card's own
+    // width past the strips of the four before it.
+    const fitsFan = available - (HAND_SIZE - 1) * FAN_MIN_STEP;
+    return Math.max(MIN_CARD_WIDTH, Math.min(preferred, fitsFan));
   }
 
   destroy(): void {
@@ -151,6 +157,9 @@ export class TableScene {
       selectedId: selectedCardId,
       enabled: myTurn,
       onTap: this.callbacks.onSelectHand,
+      // Held cards overlap; the market stays laid out because it is shared and
+      // players need to compare its four cards against their hand.
+      fan: true,
     });
 
     this.marketTop = y + GAP;
@@ -203,6 +212,19 @@ export class TableScene {
     return sprite;
   }
 
+  /**
+   * How far apart fanned cards sit. Cards are only overlapped as much as the
+   * width demands, and never so far that the container colour, glyph and name
+   * on a card's left edge are covered.
+   */
+  private fanStep(count: number, cardWidth: number): number {
+    if (count < 2) return cardWidth + GAP;
+    // Spread to fill the row: the fan is as open as the width allows, and only
+    // overlaps as much as it must.
+    const spread = Math.floor((this.width - PAD * 2 - cardWidth) / (count - 1));
+    return Math.min(cardWidth + GAP, Math.max(FAN_MIN_STEP, spread));
+  }
+
   private layoutRow(options: {
     layer: Container;
     title: string;
@@ -212,8 +234,10 @@ export class TableScene {
     selectedId: string | null;
     enabled: boolean;
     onTap: (card: Card) => void;
+    /** Overlap the cards like a held hand instead of laying them out in a grid. */
+    fan?: boolean;
   }): number {
-    const { layer, title, cards, y, seen, selectedId, enabled, onTap } = options;
+    const { layer, title, cards, y, seen, selectedId, enabled, onTap, fan = false } = options;
     // Detach only: the card sprites in here are reused and must not be destroyed.
     layer.removeChildren();
 
@@ -228,7 +252,10 @@ export class TableScene {
     const top = y + ROW_LABEL;
     const cardHeight = metricsFor(this.width).height;
     const cardWidth = this.cardWidth();
-    const perRow = Math.max(1, Math.floor((this.width - PAD * 2 + GAP) / (cardWidth + GAP)));
+    const step = fan ? this.fanStep(cards.length, cardWidth) : cardWidth + GAP;
+    const perRow = fan
+      ? cards.length || 1
+      : Math.max(1, Math.floor((this.width - PAD * 2 + GAP) / (cardWidth + GAP)));
 
     cards.forEach((card, index) => {
       const existed = this.sprites.has(card.id);
@@ -239,12 +266,18 @@ export class TableScene {
 
       const column = index % perRow;
       const row = Math.floor(index / perRow);
+      // A chosen card lifts clear of its neighbours — further when fanned,
+      // where the lift is what separates it from the cards it overlaps.
+      const lift = sprite.isSelected() ? (fan ? 16 : 5) : 0;
       const target: Point = {
-        x: PAD + column * (cardWidth + GAP),
-        // A selected card lifts, the way the DOM card did.
-        y: top + row * (cardHeight + GAP) - (sprite.isSelected() ? 5 : 0),
+        x: PAD + column * step,
+        y: top + row * (cardHeight + GAP) - lift,
       };
       layer.addChild(sprite);
+
+      // Later cards overlap earlier ones, and the chosen card sits above them
+      // all so its hint is readable.
+      if (fan) sprite.zIndex = sprite.isSelected() ? cards.length + 1 : index;
 
       if (!existed) {
         sprite.position.set(target.x, target.y);
@@ -256,8 +289,11 @@ export class TableScene {
       this.lastSeen.set(card.id, { ...target });
     });
 
+    if (fan) layer.sortableChildren = true;
+
     const rows = Math.max(1, Math.ceil(cards.length / perRow));
-    return top + rows * (cardHeight + GAP);
+    // Room for the lift so a raised card is not clipped by the row below.
+    return top + rows * (cardHeight + GAP) + (fan ? 16 : 0);
   }
 
   private layoutPlayAreas(state: PublicState, startY: number): number {
