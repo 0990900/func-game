@@ -65,6 +65,8 @@ export class CardSprite extends Container {
   readonly card: Card;
   private readonly frame = new Graphics();
   private readonly highlight = new Graphics();
+  /** Dims a card that cannot be played, without making it see-through. */
+  private readonly veil = new Graphics();
   private selected = false;
   private enabled = true;
 
@@ -140,6 +142,10 @@ export class CardSprite extends Container {
     hint.position.set(11, metrics.hintY);
     this.addChild(hint);
 
+    // Above the card's own contents, below nothing else.
+    this.addChild(this.veil);
+    this.drawVeil();
+
     if (onTap) {
       this.eventMode = 'static';
       this.cursor = 'pointer';
@@ -174,8 +180,18 @@ export class CardSprite extends Container {
 
   setEnabled(enabled: boolean): void {
     this.enabled = enabled;
-    this.alpha = enabled ? 1 : 0.45;
+    // Not `alpha`: a fanned card overlaps its neighbours, and a see-through
+    // card lets the ones beneath bleed through into unreadable mush.
+    this.veil.visible = !enabled;
     this.cursor = enabled ? 'pointer' : 'default';
+  }
+
+  private drawVeil(): void {
+    this.veil
+      .clear()
+      .roundRect(0, 0, this.cardWidth, this.metrics.height, RADIUS)
+      .fill({ color: 0x0b1016, alpha: 0.62 });
+    this.veil.visible = false;
   }
 
   isSelected(): boolean {

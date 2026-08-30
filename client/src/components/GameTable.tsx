@@ -86,7 +86,7 @@ export function GameTable({ state }: { readonly state: PublicState }) {
         <HandFallback state={state} />
       </div>
 
-      <Dock goal={goal} playArea={playArea} openSheet={sheet} onOpenSheet={setSheet} />
+      <Dock goal={goal} playArea={playArea} me={state.me} openSheet={sheet} onOpenSheet={setSheet} />
 
       {/* Non-modal: no scrim, the table stays live so cards can be tapped
           while the reference is open. */}

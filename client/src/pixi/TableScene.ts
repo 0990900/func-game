@@ -41,6 +41,7 @@ export interface TableInput {
   readonly selectedMarketId: string | null;
   /** Raised for a look, not yet chosen. Narrow screens only. */
   readonly previewCardId: string | null;
+  readonly previewMarketId: string | null;
 }
 
 const heading = (text: string, color = MUTED) =>
@@ -152,6 +153,11 @@ export class TableScene {
    * second row at full size on a desktop column, so cards give up a few pixels
    * to stay on one line — but never below the width their text needs.
    */
+  /** Wide enough to lay every row out flat, or narrow enough to need fanning. */
+  private isNarrow(): boolean {
+    return this.width <= 560;
+  }
+
   private cardWidth(): number {
     const available = this.width - PAD * 2;
     const fitsFive = (available - (HAND_SIZE - 1) * GAP) / HAND_SIZE;
@@ -172,7 +178,7 @@ export class TableScene {
   }
 
   /** Rebuilds layout from state, reusing every sprite whose card is still on the table. */
-  update({ state, selectedCardId, selectedMarketId, previewCardId }: TableInput): number {
+  update({ state, selectedCardId, selectedMarketId, previewCardId, previewMarketId }: TableInput): number {
     // Sprites bake their size, so a resize that changes card geometry has to
     // rebuild them rather than reuse cards drawn at the old dimensions.
     const geometryKey = `${this.cardWidth()}x${metricsFor(this.width).height}`;
@@ -200,8 +206,6 @@ export class TableScene {
       raisedId: previewCardId,
       enabled: myTurn,
       onTap: this.callbacks.onSelectHand,
-      // Held cards overlap; the market stays laid out because it is shared and
-      // players need to compare its four cards against their hand.
       fan: true,
     });
 
@@ -213,9 +217,12 @@ export class TableScene {
       y: this.marketTop,
       seen,
       selectedId: selectedMarketId,
+      raisedId: previewMarketId,
       // Market cards are inert until a hand card is chosen — the two-step pick.
       enabled: myTurn && Boolean(selectedCardId),
       onTap: this.callbacks.onSelectMarket,
+      // Narrow screens fan the market too, so the table fits without scrolling.
+      fan: this.isNarrow(),
     });
 
     y = this.layoutPlayAreas(state, y + GAP);

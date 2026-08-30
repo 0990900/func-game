@@ -37,6 +37,8 @@ export interface GameState {
    * first tap reveals, the second commits.
    */
   previewCardId: string | null;
+  /** The market card raised for a look. Same two-tap rule as the hand. */
+  previewMarketId: string | null;
   toasts: Toast[];
   myTurnAnnounced: boolean;
 }
@@ -50,6 +52,7 @@ const initial: GameState = {
   selectedCardId: null,
   selectedMarketId: null,
   previewCardId: null,
+  previewMarketId: null,
   toasts: [],
   myTurnAnnounced: false,
 };
@@ -101,6 +104,7 @@ const handlers: Handlers = {
       selectedCardId: null,
       selectedMarketId: null,
       previewCardId: null,
+      previewMarketId: null,
       connection: 'connected',
       myTurnAnnounced: becameMyTurn,
     });
@@ -182,20 +186,37 @@ export const actions = {
     set((s) => {
       // Tapping the chosen card again puts it back.
       if (s.selectedCardId === cardId) {
-        return { selectedCardId: null, selectedMarketId: null, previewCardId: null };
+        return {
+          selectedCardId: null, selectedMarketId: null,
+          previewCardId: null, previewMarketId: null,
+        };
       }
       // Wide screens show every card in full, so one tap is enough.
       if (!isNarrow()) return { selectedCardId: cardId, previewCardId: null };
       // Narrow: reveal first, commit on the second tap of the same card.
       return s.previewCardId === cardId
         ? { selectedCardId: cardId, previewCardId: null }
-        : { previewCardId: cardId, selectedCardId: null, selectedMarketId: null };
+        : {
+            previewCardId: cardId, selectedCardId: null,
+            selectedMarketId: null, previewMarketId: null,
+          };
     }),
 
   selectMarket: (cardId: string) =>
-    set((s) => (s.selectedMarketId === cardId ? { selectedMarketId: null } : { selectedMarketId: cardId })),
+    set((s) => {
+      if (s.selectedMarketId === cardId) return { selectedMarketId: null, previewMarketId: null };
+      if (!isNarrow()) return { selectedMarketId: cardId, previewMarketId: null };
+      // Narrow: the market is fanned too, so reveal first and commit on the
+      // second tap — the same rule as the hand, so there is one thing to learn.
+      return s.previewMarketId === cardId
+        ? { selectedMarketId: cardId, previewMarketId: null }
+        : { previewMarketId: cardId, selectedMarketId: null };
+    }),
 
-  clearPick: () => set({ selectedCardId: null, selectedMarketId: null, previewCardId: null }),
+  clearPick: () => set({
+    selectedCardId: null, selectedMarketId: null,
+    previewCardId: null, previewMarketId: null,
+  }),
 
   submitPick: () => {
     const { selectedCardId, selectedMarketId } = get();

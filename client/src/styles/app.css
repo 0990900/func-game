@@ -327,6 +327,9 @@ main.is-drafting .table-canvas { position: absolute; inset: 0; }
 .dock-confirm { display: grid; gap: 6px; }
 .dock-confirm p { margin: 0; color: var(--muted); font-size: 12px; }
 .dock-actions { display: grid; grid-template-columns: 1fr auto; gap: 6px; }
+.dock-claim { border-top: 2px solid var(--maybe); padding-top: 6px; }
+.dock-claim p { color: var(--maybe); font-weight: 800; }
+.dock-actions--claims { grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); }
 .dock-actions button { min-height: 46px; }
 
 /* Bottom sheets ----------------------------------------------------------- */

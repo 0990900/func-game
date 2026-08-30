@@ -12,7 +12,7 @@
 import { GoalProgress } from './GoalProgress.tsx';
 import { actions, useGame } from '../store/gameStore.ts';
 import { scrollPageTo } from '../ui/scroll.ts';
-import type { Card, Goal } from '../../../src/core/types.ts';
+import type { Card, Goal, PublicMe } from '../../../src/core/types.ts';
 
 export type SheetName = 'goal' | 'combos' | 'score' | 'log';
 
@@ -26,23 +26,46 @@ const TRIGGERS: ReadonlyArray<{ name: SheetName; label: string; icon: string }> 
 export function Dock({
   goal,
   playArea,
+  me,
   openSheet,
   onOpenSheet,
 }: {
   readonly goal: Goal | null;
   readonly playArea: readonly Card[];
+  readonly me: PublicMe | null;
   readonly openSheet: SheetName | null;
   readonly onOpenSheet: (sheet: SheetName | null) => void;
 }) {
   const selectedCardId = useGame((s) => s.selectedCardId);
   const selectedMarketId = useGame((s) => s.selectedMarketId);
+  const claiming = Boolean(me?.canFinishClaim);
   const deciding = Boolean(selectedCardId);
 
   return (
     <div className="dock">
       <GoalProgress goal={goal} playArea={playArea} onOpen={() => onOpenSheet('goal')} />
 
-      {deciding ? (
+      {/* A finished combo stops the turn until it is resolved, so the choice
+          takes the dock ahead of everything else. */}
+      {claiming ? (
+        <div className="dock-confirm dock-claim">
+          <p>새 조합 완성 · Claim하면 1점 (게임 전체에서 한 번만)</p>
+          <div className="dock-actions dock-actions--claims">
+            {me!.availableClaims.map((combo) => (
+              <button
+                key={`${combo.container}:${combo.name}`}
+                type="button"
+                onClick={() => actions.claim(combo.container, combo.name)}
+              >
+                {combo.container} {combo.name}
+              </button>
+            ))}
+            <button type="button" className="secondary" onClick={actions.finishClaim}>
+              건너뛰기
+            </button>
+          </div>
+        </div>
+      ) : deciding ? (
         <div className="dock-confirm">
           <p>
             {selectedMarketId ? '손패 카드를 시장에 놓고 교환합니다.' : '내 플레이 영역에 놓습니다.'}

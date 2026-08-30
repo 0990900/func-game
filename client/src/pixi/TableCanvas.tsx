@@ -70,9 +70,13 @@ export function TableCanvas() {
       let lastSelected: string | null = null;
 
       const draw = (): void => {
-        const { state, selectedCardId, selectedMarketId, previewCardId } = gameStore.getState();
+        const {
+          state, selectedCardId, selectedMarketId, previewCardId, previewMarketId,
+        } = gameStore.getState();
         if (!state || !scene || !app) return;
-        const content = scene.update({ state, selectedCardId, selectedMarketId, previewCardId });
+        const content = scene.update({
+          state, selectedCardId, selectedMarketId, previewCardId, previewMarketId,
+        });
         // The canvas fills its grid row; the scene scrolls inside it when the
         // content is taller, so the page itself never grows.
         const available = host.clientHeight || content;
