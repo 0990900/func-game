@@ -61,7 +61,9 @@ export function RoomList({
         return (
           <li key={room.roomId}>
             <span className="room-who">
-              <b>{room.host}</b>의 방
+              {/* One element, or the grid makes the name and the suffix two
+                  rows and every room reads as "방장 / 의 방". */}
+              <span className="room-name"><b>{room.host}</b>의 방</span>
               <span className="muted">
                 {phaseName(room.phase as Phase)} · 사람 {room.humans}/{SEATS}
                 {room.observers > 0 && ` · 관전 ${room.observers}`}
