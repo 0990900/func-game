@@ -96,10 +96,17 @@ export function pushToast(text: string): void {
   setTimeout(() => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== toast.id) })), 2500);
 }
 
-/** Title, toast and a cue when the turn becomes ours. */
+/**
+ * Title, toast and a cue when the turn becomes ours.
+ *
+ * Two sounds, in the order the things happen: the card comes off the deck, and
+ * then the game says it is your move. `turn` carries its own delay so the
+ * announcement lands after the card does rather than on top of it.
+ */
 function announceMyTurn(): void {
   document.title = '내 턴! · FP Draft';
   pushToast('내 턴입니다. 뽑은 카드를 선택하세요.');
+  sound.play('draw');
   sound.play('turn');
 }
 
@@ -113,6 +120,12 @@ function announceMyTurn(): void {
 function announce(previous: PublicState | null, next: PublicState): void {
   const meId = next.me?.id;
   if (!meId) return;
+
+  // A card off the deck is a sound in its own right. It comes with the turn on
+  // the first draw, and on its own when a reverse card is set aside and another
+  // is dealt in its place — a moment that otherwise passed in silence.
+  const drew = next.drawn && next.drawn.id !== previous?.drawn?.id;
+  if (drew && next.me?.isMyTurn && previous?.me?.isMyTurn) sound.play('draw');
 
   if (next.phase === 'finished' && previous?.phase !== 'finished') {
     sound.play('finish');

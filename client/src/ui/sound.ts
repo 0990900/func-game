@@ -21,6 +21,8 @@
  */
 
 export type Cue =
+  /** A card came off the deck for us. */
+  | 'draw'
   /** The turn became ours. The one sound worth hearing from another tab. */
   | 'turn'
   /** A card went to the play area. */
@@ -58,11 +60,25 @@ interface Note {
  * times a game; one is picked at random each time.
  */
 const SAMPLES: Partial<Record<Cue, readonly string[]>> = {
+  // Off the deck, onto the table, and away into the market: three different
+  // things happening to a card, so three different recordings of one.
+  draw: ['card-slide-1', 'card-slide-2', 'card-slide-3'],
   place: ['card-place-1', 'card-place-2', 'card-place-3', 'card-place-4'],
-  swap: ['card-slide-1', 'card-slide-2'],
+  swap: ['card-shove-1', 'card-shove-2'],
 };
 
 const SAMPLE_GAIN = 0.55;
+
+/**
+ * How much louder the synthesised cues have to be to sit with the recordings.
+ *
+ * Kenney's files peak around 0.77, so after `SAMPLE_GAIN` they reach about
+ * 0.42 while a tone was asking for 0.05 — eight times quieter, which is not a
+ * balance but an inaudible layer. Every note gain below is written at its
+ * relative weight and scaled here, so the two stay in proportion if either
+ * moves.
+ */
+const TONE_GAIN = 7;
 
 let context: AudioContext | null = null;
 let muted = readMuted();
@@ -145,7 +161,7 @@ async function preload(ctx: AudioContext): Promise<void> {
 }
 
 /** Plays one recording, if it arrived. Returns whether it did. */
-function sample(ctx: AudioContext, cue: Cue): boolean {
+function sample(ctx: AudioContext, cue: Cue, at = 0): boolean {
   const names = SAMPLES[cue];
   if (!names?.length) return false;
   const buffer = buffers.get(names[Math.floor(Math.random() * names.length)]!);
@@ -160,7 +176,7 @@ function sample(ctx: AudioContext, cue: Cue): boolean {
   gain.gain.value = SAMPLE_GAIN;
   source.connect(gain);
   gain.connect(ctx.destination);
-  source.start();
+  source.start(ctx.currentTime + at);
   return true;
 }
 
@@ -197,7 +213,7 @@ function tone(ctx: AudioContext, note: Note): void {
   // envelope is what makes a square wave read as a card sound rather than a
   // buzzer.
   gain.gain.setValueAtTime(0.0001, start);
-  gain.gain.exponentialRampToValueAtTime(note.gain, start + 0.008);
+  gain.gain.exponentialRampToValueAtTime(note.gain * TONE_GAIN, start + 0.008);
   gain.gain.exponentialRampToValueAtTime(0.0001, start + note.seconds);
 
   oscillator.connect(gain);
@@ -228,11 +244,16 @@ function claimRun(count: number): Note[] {
 
 function notesFor(cue: Cue, count: number): Note[] {
   switch (cue) {
+    case 'draw':
+      // Never reached while the recordings are present; here so a browser that
+      // could not decode them still hears something arrive.
+      return [{ hz: semitone(-17), at: 0, seconds: 0.09, gain: 0.05, type: 'square' }];
     case 'turn':
-      // Two notes rising a fifth: an announcement, not an alarm.
+      // Two notes rising a fifth, after the card has landed: the deck speaks
+      // first, then the game says whose move it is.
       return [
-        { hz: semitone(-5), at: 0, seconds: 0.12, gain: 0.05, type: 'triangle' },
-        { hz: semitone(2), at: 0.09, seconds: 0.16, gain: 0.05, type: 'triangle' },
+        { hz: semitone(-5), at: 0.14, seconds: 0.12, gain: 0.045, type: 'triangle' },
+        { hz: semitone(2), at: 0.23, seconds: 0.16, gain: 0.045, type: 'triangle' },
       ];
     case 'place':
       // Short, low and dry: a card meeting the table, not a chime.

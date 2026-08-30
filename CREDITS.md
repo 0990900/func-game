@@ -6,9 +6,10 @@
 
 - 출처: <https://kenney.nl/assets/casino-audio> (Kenney Vleugels, kenney.nl)
 - 라이선스: **CC0 1.0** — 저작자 표시는 의무가 아니지만, 출처를 추적할 수 있도록 남깁니다.
-- 사용 파일 (`client/public/sounds/`):
-  - `card-place-1..4.ogg` — 카드를 플레이 영역에 놓을 때. 넷 중 하나를 무작위로 고릅니다.
-  - `card-slide-1..2.ogg` — 시장 카드와 교환할 때.
+- 사용 파일 (`client/public/sounds/`). 카드에 벌어지는 일이 셋이라 녹음도 셋입니다:
+  - `card-slide-1..3.ogg` — 덱에서 한 장이 뽑혀 나올 때.
+  - `card-place-1..4.ogg` — 카드를 플레이 영역에 놓을 때. 한 판에 15번 들리므로 넷을 돌려 씁니다.
+  - `card-shove-1..2.ogg` — 뽑은 카드를 시장으로 밀어 넣고 교환할 때.
 
 내 턴 시작, 시간 임박, Claim, 게임 종료는 녹음이 아니라 `client/src/ui/sound.ts`에서
 Web Audio로 합성합니다. 카드 소리는 마찰음이라 녹음이어야 하고, 상태 알림은 서로 구분되는
