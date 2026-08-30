@@ -60,6 +60,8 @@ const FAN_LIFT = 16;
 const GUIDE_MAX_ROWS = 6;
 const GUIDE_COLUMNS = 2;
 const GUIDE_MAX_WIDTH = 220;
+/** Narrowest a guide block may be. Two of them fit side by side, or they stack. */
+const GUIDE_MIN_WIDTH = 236;
 
 /** Narrowest the card column may be and still show two cards whole with three
     tappable strips between them. Below this the columns stack instead. */
@@ -139,6 +141,12 @@ interface SlotCell {
   /** Held more than once. Worth a mark, not a word: a second copy of the same
    *  operation adds nothing to a combo. */
   readonly duplicate?: boolean;
+}
+
+/** A card the guide is speaking about, and where it came from. */
+interface GuideFocus {
+  readonly role: string;
+  readonly card: Card;
 }
 
 /** One card in the top row, with the rule that governs it. */
@@ -419,13 +427,16 @@ export class TableScene {
       fan: true,
     });
 
-    // What the player is looking at right now: the market card if one is in
-    // hand, otherwise the drawn card. A preview counts — on a phone the first
-    // tap only reads a card, and that is exactly when the guide is wanted.
-    const focusId = previewMarketId ?? selectedMarketId ?? previewCardId ?? selectedCardId;
-    const focus = focusId
-      ? rowCards.find((entry) => entry.card.id === focusId)?.card ?? null
-      : null;
+    // What the player is looking at right now. A preview counts — on a phone the
+    // first tap only reads a card, and that is exactly when the guide is wanted.
+    // Both sides show at once during a swap: that choice is a comparison, and
+    // one guide cannot answer it.
+    const find = (id: string | null): Card | null =>
+      (id ? rowCards.find((entry) => entry.card.id === id)?.card ?? null : null);
+    const focus: GuideFocus[] = [
+      { role: '뽑은 카드', card: find(previewCardId ?? selectedCardId) },
+      { role: '시장', card: find(previewMarketId ?? selectedMarketId) },
+    ].filter((entry): entry is GuideFocus => entry.card !== null);
     y = this.layoutSelectionGuide(state, focus, y + GAP, PAD, cardsWidth);
 
     const areasEnd = this.layoutPlayAreas(state, split ? PAD : y + GAP, areasLeft, areasWidth);
@@ -753,7 +764,7 @@ export class TableScene {
    */
   private layoutSelectionGuide(
     state: PublicState,
-    card: Card | null,
+    focus: readonly GuideFocus[],
     startY: number,
     left: number,
     width: number,
@@ -762,15 +773,46 @@ export class TableScene {
       killTweens(child);
       child.destroy();
     }
-    if (!card) return startY;
+    if (focus.length === 0) return startY;
 
+    const title = heading('이 카드를 가지면');
+    title.position.set(left, startY);
+    this.guideLayer.addChild(title);
+    const top = startY + ROW_LABEL;
+
+    // Two cards are a comparison, so they go side by side wherever they fit.
+    if (focus.length > 1 && width >= GUIDE_MIN_WIDTH * 2 + GAP) {
+      const columnWidth = Math.floor((width - GAP) / 2);
+      return focus.reduce(
+        (bottom, entry, index) => Math.max(
+          bottom,
+          this.layoutGuideBlock(state, entry, top, left + index * (columnWidth + GAP), columnWidth),
+        ),
+        top,
+      );
+    }
+
+    return focus.reduce(
+      (y, entry) => this.layoutGuideBlock(state, entry, y, left, width) + GAP,
+      top,
+    );
+  }
+
+  /** One card's worth of guide: what it moves, and how far. */
+  private layoutGuideBlock(
+    state: PublicState,
+    { role, card }: GuideFocus,
+    startY: number,
+    left: number,
+    width: number,
+  ): number {
     const mine = state.players.find((player) => player.id === state.me?.id)?.playArea ?? [];
     let y = startY;
 
-    const title = heading(`${card.label} · 이 카드를 가지면`);
-    title.position.set(left, y);
-    this.guideLayer.addChild(title);
-    y += ROW_LABEL;
+    const name = body(`${role} · ${card.label}`, 12, TEXT);
+    name.position.set(left, y);
+    this.guideLayer.addChild(name);
+    y += 18;
 
     // A utility scores on variety alone, so no typeclass has anything to say.
     if (card.kind === 'utility') {
@@ -812,9 +854,14 @@ export class TableScene {
       return y + SLOT_ROW;
     }
 
-    const cellWidth = Math.min(GUIDE_MAX_WIDTH, Math.floor((width - SLOT_GAP) / GUIDE_COLUMNS));
+    // A narrow block runs one to a line rather than squeezing two.
+    const columns = width >= GUIDE_MIN_WIDTH * 2 ? GUIDE_COLUMNS : 1;
+    const cellWidth = Math.min(
+      GUIDE_MAX_WIDTH,
+      Math.floor((width - (columns - 1) * SLOT_GAP) / columns),
+    );
     rows.forEach((row, index) => {
-      const column = index % GUIDE_COLUMNS;
+      const column = index % columns;
       if (column === 0 && index > 0) y += SLOT_ROW;
       const x = left + column * (cellWidth + SLOT_GAP);
 
