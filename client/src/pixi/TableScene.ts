@@ -24,7 +24,7 @@ const PAD = 16;
 const CHIP_GAP = 6;
 /* Operation names are short now that the container is named once per row, so
    the columns can be too — three fit across a phone. */
-const CHIP_COLUMN = 52;
+const CHIP_COLUMN = 62;
 /** Width of the group label that names the container a row belongs to. */
 const GROUP_LABEL_WIDTH = 74;
 /** A full hand. Cards shrink a little to keep it on one row when they nearly fit. */
@@ -523,10 +523,10 @@ export class TableScene {
         groups.set(key, group);
       }
       // The group already names the container, so the chip only carries what
-      // differs inside it. A container wildcard becomes a bare star rather than
-      // repeating the container it is filed under.
+      // differs inside it. A container wildcard is a bare star: the deck uses
+      // that notation throughout, so it needs no gloss.
       const text = card.kind === 'container-wildcard'
-        ? '＊ 아무 연산'
+        ? '*'
         : card.kind === 'container-function' || card.kind === 'utility'
           ? card.operation
           : card.label;
@@ -551,33 +551,27 @@ export class TableScene {
 
       let column = 0;
       for (const [text, count] of [...group.entries].sort((a, b) => a[0].localeCompare(b[0]))) {
-        const chip = body(count > 1 ? `${text} ×${count}` : text, 12);
-        // n columns hold n*columnWidth + (n-1)*gap, so the gap belongs on the
-        // requirement before dividing, or a chip a few pixels too wide for one
-        // column would be given one and clipped.
-        const span = Math.min(
-          columns,
-          Math.max(1, Math.ceil((chip.width + 18 + CHIP_GAP) / (columnWidth + CHIP_GAP))),
-        );
-
-        if (column + span > columns) {
+        if (column >= columns) {
           column = 0;
           y += CHIP_HEIGHT;
         }
 
         const x = contentLeft + column * (columnWidth + CHIP_GAP);
-        const width = span * columnWidth + (span - 1) * CHIP_GAP;
-
         const box = new Graphics()
-          .roundRect(x, y, width, 24, 3)
+          .roundRect(x, y, columnWidth, 24, 3)
           .fill({ color: group.tint, alpha: 0.08 })
           .stroke({ width: 1, color: group.tint });
-        chip.position.set(x + 9, y + 5);
-        const clip = new Graphics().rect(x, y, width - 6, 24).fill(0xffffff);
-        chip.mask = clip;
 
-        this.areaLayer.addChild(box, clip, chip);
-        column += span;
+        // Every chip is the same width and every row holds the same number.
+        // A label that will not fit is shrunk to fit rather than being given a
+        // wider box — a grid whose cells vary is not a grid.
+        const chip = body(count > 1 ? `${text} ×${count}` : text, 12);
+        const room = columnWidth - 12;
+        if (chip.width > room) chip.scale.set(Math.max(0.68, room / chip.width));
+        chip.position.set(x + Math.round((columnWidth - chip.width * chip.scale.x) / 2), y + 5);
+
+        this.areaLayer.addChild(box, chip);
+        column += 1;
       }
 
       y += CHIP_HEIGHT;
