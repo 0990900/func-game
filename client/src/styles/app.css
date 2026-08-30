@@ -255,16 +255,30 @@ main.my-turn .statusbar { box-shadow: 0 0 0 2px rgba(244, 201, 93, .2), 0 8px 24
 .table-canvas { width: 100%; min-width: 0; line-height: 0; }
 .table-canvas canvas { max-width: 100%; }
 
-/* A keyboard path to the hand: the canvas is not focusable, so the same
-   selection is available as real buttons. Visible only to keyboard users. */
-.sr-hand { display: flex; flex-wrap: wrap; gap: 6px; padding: var(--space-3); }
+/* A keyboard path to the table: the canvas is not focusable, so every card on
+   it is also a real button here. Hidden by clipping to a 1px box rather than by
+   opacity — `button:disabled { opacity: .42 }` outranks an opacity of 0 and was
+   painting the disabled market buttons over the table. A clipped box cannot be
+   made visible by any opacity rule. */
+.sr-hand { display: flex; flex-wrap: wrap; gap: 6px; padding: 0; }
 .sr-card {
-  min-height: 32px; padding: 0 10px; font-size: 12px; font-weight: 700;
-  background: transparent; color: var(--muted); border: 1px solid var(--line);
-  opacity: 0; position: absolute; pointer-events: none;
+  position: absolute;
+  width: 1px; height: 1px; min-height: 0;
+  margin: -1px; padding: 0; border: 0;
+  overflow: hidden; clip-path: inset(50%); white-space: nowrap;
+  pointer-events: none;
 }
-.sr-card:focus-visible { opacity: 1; position: static; pointer-events: auto; color: var(--text); }
-.sr-hand:focus-within .sr-card { opacity: 1; position: static; pointer-events: auto; }
+.sr-card:focus-visible,
+.sr-hand:focus-within .sr-card {
+  position: static;
+  width: auto; height: auto; min-height: 32px;
+  margin: 0; padding: 0 10px;
+  clip-path: none; overflow: visible; pointer-events: auto;
+  border: 1px solid var(--line);
+  background: var(--surface-2); color: var(--text);
+  font-size: 12px; font-weight: 700;
+}
+.sr-hand:focus-within { padding: var(--space-3); }
 .visually-hidden {
   position: absolute; width: 1px; height: 1px; margin: -1px;
   padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap;
