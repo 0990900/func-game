@@ -15,7 +15,7 @@ import type { TableTextures } from './assets.ts';
 import { containerMeta, statusName } from '../theme/meta.ts';
 import { containerColor, palette, toHexNumber, utilityColor, wildcardColor } from '../theme/tokens.ts';
 import { containers, createDeck } from '../../../src/core/cards.ts';
-import { coveredOperations } from '../../../src/core/combos.ts';
+import { coveredOperations, scoringCombos } from '../../../src/core/combos.ts';
 import { isNarrow } from '../ui/viewport.ts';
 import type { Card, ContainerName, PublicState, Reveal } from '../../../src/core/types.ts';
 
@@ -74,10 +74,17 @@ const CONTAINER_SLOTS: Record<string, string[]> = (() => {
   return slots;
 })();
 
-/** One cell of a container's slot row. */
+/** One cell of a container's row: a finished combo, or a slot still open. */
 interface SlotCell {
   readonly text: string;
-  readonly state: 'owned' | 'covered' | 'empty';
+  readonly state: 'combo' | 'owned' | 'covered' | 'empty';
+  /** Held more than once. Worth a mark, not a word: a second copy of the same
+   *  operation adds nothing to a combo. */
+  readonly duplicate?: boolean;
+  /** Cells this one occupies. A combo earns two; a slot always takes one. */
+  readonly span?: number;
+  /** Declared, and so locked away from everyone else for the rest of the game. */
+  readonly claimed?: boolean;
 }
 
 export interface TableInput {
@@ -470,7 +477,7 @@ export class TableScene {
         this.areaLayer.addChild(empty);
         y += CHIP_HEIGHT;
       } else {
-        y = this.layoutChips(player.playArea, y, isMe);
+        y = this.layoutChips(player.playArea, new Set(player.claims), y);
       }
       y += GAP;
     }
@@ -513,45 +520,72 @@ export class TableScene {
     }
   }
 
-  private layoutChips(cards: readonly Card[], startY: number, _own: boolean): number {
+  private layoutChips(cards: readonly Card[], claims: ReadonlySet<string>, startY: number): number {
     const contentLeft = PAD + GROUP_LABEL_WIDTH + 6;
     const available = this.width - PAD - contentLeft;
     const cellWidth = Math.floor((available - (SLOT_COUNT - 1) * SLOT_GAP) / SLOT_COUNT);
 
     let y = startY;
 
-    const cell = (index: number, tint: number, slot: SlotCell): void => {
-      const column = index % SLOT_COUNT;
-      if (column === 0 && index > 0) y += SLOT_ROW;
+    let column = 0;
+    const cell = (tint: number, slot: SlotCell): void => {
+      const span = Math.min(SLOT_COUNT, slot.span ?? 1);
+      if (column + span > SLOT_COUNT) {
+        column = 0;
+        y += SLOT_ROW;
+      }
       const x = contentLeft + column * (cellWidth + SLOT_GAP);
+      const boxWidth = span * cellWidth + (span - 1) * SLOT_GAP;
+      column += span;
 
       // Owned takes the container's colour; a slot a wildcard is standing in
       // for is starred, since no card of that operation is actually held; a
       // slot still missing stays grey. The gaps are the point — they are what
       // says who is going for what.
+      // A finished combo is the thing that scores, so it reads loudest; then a
+      // card that is held, then a slot a wildcard covers, then what is missing.
+      const combo = slot.state === 'combo';
       const owned = slot.state === 'owned';
       const covered = slot.state === 'covered';
-      const colour = owned || covered ? tint : EMPTY_SLOT;
+      const colour = combo ? ACCENT : owned || covered ? tint : EMPTY_SLOT;
 
+      // A claimed combo is declared and locked for the rest of the game, so it
+      // reads solid; an unclaimed one is only built, and could still be lost to
+      // whoever claims it first.
       const box = new Graphics()
-        .roundRect(x, y, cellWidth, 22, 3)
-        .fill({ color: owned || covered ? tint : 0x000000, alpha: owned ? 0.16 : covered ? 0.05 : 0.14 })
-        .stroke({ width: 1, color: colour, alpha: owned ? 1 : covered ? 0.8 : 0.4 });
+        .roundRect(x, y, boxWidth, 22, 3)
+        .fill({
+          color: combo ? ACCENT : owned || covered ? tint : 0x000000,
+          alpha: combo ? (slot.claimed ? 0.34 : 0.14) : owned ? 0.16 : covered ? 0.05 : 0.14,
+        })
+        .stroke({ width: combo ? 2 : 1, color: colour, alpha: combo || owned ? 1 : covered ? 0.8 : 0.4 });
 
-      const text = body(covered ? `✦${slot.text}` : slot.text, 11, colour);
-      text.alpha = owned ? 1 : covered ? 0.9 : 0.55;
-      const room = cellWidth - 6;
+      // One word per cell. Anything else the slot has to say is a mark in the
+      // corner, so the row stays scannable instead of becoming a wall of text.
+      const text = body(slot.text, 11, colour);
+      text.alpha = combo || owned ? 1 : covered ? 0.9 : 0.55;
+      const room = boxWidth - 8;
       if (text.width > room) text.scale.set(Math.max(0.6, room / text.width));
-      text.position.set(x + Math.round((cellWidth - text.width * text.scale.x) / 2), y + 4);
+      text.position.set(x + Math.round((boxWidth - text.width * text.scale.x) / 2), y + 4);
 
       this.areaLayer.addChild(box, text);
+
+      if (covered) {
+        const star = body('✦', 8, tint);
+        star.position.set(x + boxWidth - 9, y + 1);
+        this.areaLayer.addChild(star);
+      } else if (slot.duplicate) {
+        const mark = new Graphics().circle(x + boxWidth - 5, y + 5, 2).fill({ color: tint, alpha: 0.9 });
+        this.areaLayer.addChild(mark);
+      }
     };
 
     const row = (label: string, tint: number, slots: readonly SlotCell[]): void => {
       const heading = body(label, 12, tint);
       heading.position.set(PAD, y + 4);
       this.areaLayer.addChild(heading);
-      slots.forEach((slot, index) => cell(index, tint, slot));
+      column = 0;
+      for (const slot of slots) cell(tint, slot);
       y += SLOT_ROW;
     };
 
@@ -567,16 +601,31 @@ export class TableScene {
       }
       const covered = coveredOperations(cards, container, slots);
 
+      // What scores is the combo, not the cards under it, so a finished combo
+      // is shown as itself and the operations it consumed are folded into it.
+      // scoringCombos is the same function that pays out, so this cannot claim
+      // a combo the scoreboard disagrees with.
+      const combos = scoringCombos(cards).filter((combo) => combo.container === container);
+      const consumed = new Set(combos.flatMap((combo) => [...combo.requires]));
+
       row(
         containerMeta[container]?.symbol ?? container,
         toHexNumber(containerColor[container]),
-        slots.map((operation) => {
-          const count = counts.get(operation) ?? 0;
-          if (count > 0) {
-            return { text: count > 1 ? `${operation}×${count}` : operation, state: 'owned' as const };
-          }
-          return { text: operation, state: covered.has(operation) ? 'covered' as const : 'empty' as const };
-        }),
+        [
+          ...combos.map((combo) => ({
+            text: `${claims.has(`${container}:${combo.name}`) ? '★ ' : ''}${combo.name} ${combo.score}`,
+            state: 'combo' as const,
+            span: 2,
+            claimed: claims.has(`${container}:${combo.name}`),
+          })),
+          ...slots
+            .filter((operation) => !consumed.has(operation))
+            .map((operation) => {
+              const count = counts.get(operation) ?? 0;
+              if (count > 0) return { text: operation, state: 'owned' as const, duplicate: count > 1 };
+              return { text: operation, state: covered.has(operation) ? 'covered' as const : 'empty' as const };
+            }),
+        ],
       );
     }
 
@@ -596,9 +645,12 @@ export class TableScene {
       row(
         label,
         toHexNumber(key === 'utility' ? utilityColor : wildcardColor),
+        // A second wildcard fills a second slot, so the count matters here in a
+        // way it does not for an exact card — but a mark still says it.
         [...held].sort((a, b) => a[0].localeCompare(b[0])).map(([text, count]) => ({
-          text: count > 1 ? `${text}×${count}` : text,
+          text,
           state: 'owned' as const,
+          duplicate: count > 1,
         })),
       );
     }

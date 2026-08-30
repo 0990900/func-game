@@ -86,6 +86,7 @@ function project(
       connected: p.connected,
       playArea: p.playArea,
       claimCount: p.claims.length,
+      claims: p.claims,
       cardCount: p.playArea.length,
       status: playerStatus(room, p),
       publicScore: publicScore(p),

@@ -80,6 +80,35 @@ function normalize(value: unknown, map: Map<string, string>): unknown {
 
 const canon = (state: unknown): unknown => normalize(JSON.parse(JSON.stringify(state)), new Map());
 
+/**
+ * Asserts the new core still produces everything the legacy one did, with the
+ * same values — while allowing it to produce more.
+ *
+ * The port itself is finished and merged; what this test guards now is drift in
+ * the fields both cores share. A field the new core adds for the client (a
+ * player's claimed combos, say) is not a regression, and demanding byte
+ * equality would make the legacy core a ceiling on the new one until cutover
+ * removes it.
+ */
+function assertSupersetOf(actual: unknown, expected: unknown, where: string): void {
+  if (Array.isArray(expected)) {
+    assert.ok(Array.isArray(actual), `${where}: expected an array`);
+    assert.equal((actual as unknown[]).length, expected.length, `${where}: length`);
+    expected.forEach((item, index) => {
+      assertSupersetOf((actual as unknown[])[index], item, `${where}[${index}]`);
+    });
+    return;
+  }
+  if (expected && typeof expected === 'object') {
+    assert.ok(actual && typeof actual === 'object', `${where}: expected an object`);
+    for (const [key, value] of Object.entries(expected)) {
+      assertSupersetOf((actual as Record<string, unknown>)[key], value, `${where}.${key}`);
+    }
+    return;
+  }
+  assert.deepStrictEqual(actual, expected, where);
+}
+
 test('effect core reproduces the legacy core state for a full four-player game', () => {
   const SEED = 20260830;
   // The legacy core reads Math.random directly, so it is swapped in only for
@@ -106,7 +135,7 @@ test('effect core reproduces the legacy core state for a full four-player game',
       assert.equal(viewers.length, oldViewers.length, `${label}: player count`);
 
       viewers.forEach((viewerId, index) => {
-        assert.deepStrictEqual(
+        assertSupersetOf(
           canon(publicState(table.room, viewerId)),
           canon(legacy(() => oldPublicState(oldRoom, oldViewers[index] ?? null))),
           `${label}: viewer ${index}`,

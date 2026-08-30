@@ -145,6 +145,11 @@ export interface PublicPlayer {
   readonly connected: boolean;
   readonly playArea: readonly Card[];
   readonly claimCount: number;
+  /**
+   * Combo keys this player has claimed, formatted `Container:Name`. Public:
+   * every claim is announced in the event log as it happens.
+   */
+  readonly claims: readonly string[];
   readonly cardCount: number;
   readonly status: PlayerStatus;
   readonly publicScore: ScoreBreakdown;
