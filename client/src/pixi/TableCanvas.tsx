@@ -72,11 +72,11 @@ export function TableCanvas() {
 
       const draw = (): void => {
         const {
-          state, selectedCardId, selectedMarketId, previewCardId, previewMarketId, showSignatures,
+          state, selectedCardId, selectedMarketId, previewCardId, previewMarketId, showSignatures, showOpponents,
         } = gameStore.getState();
         if (!state || !scene || !app) return;
         const content = scene.update({
-          state, selectedCardId, selectedMarketId, previewCardId, previewMarketId, showSignatures,
+          state, selectedCardId, selectedMarketId, previewCardId, previewMarketId, showSignatures, showOpponents,
         });
         // The canvas fills its grid row; the scene scrolls inside it when the
         // content is taller, so the page itself never grows.
@@ -125,15 +125,28 @@ export function TableCanvas() {
         requestAnimationFrame(() => created.canvas.classList.remove('is-dragging'));
       };
 
+      // Dragging the felt is the phone gesture. On a desktop the gesture is the
+      // wheel, and without this the table simply could not be scrolled with a
+      // mouse: four play areas are taller than any window, and the bottom one
+      // was unreachable.
+      const onWheel = (event: WheelEvent): void => {
+        if (!scene) return;
+        // Trackpads report pixels, mice report lines.
+        const delta = event.deltaMode === 1 ? event.deltaY * 16 : event.deltaY;
+        if (scene.scrollBy(delta)) event.preventDefault();
+      };
+
       created.canvas.addEventListener('pointerdown', onPointerDown);
       created.canvas.addEventListener('pointermove', onPointerMove);
       created.canvas.addEventListener('pointerup', endDrag);
       created.canvas.addEventListener('pointercancel', endDrag);
+      created.canvas.addEventListener('wheel', onWheel, { passive: false });
       detachDrag = () => {
         created.canvas.removeEventListener('pointerdown', onPointerDown);
         created.canvas.removeEventListener('pointermove', onPointerMove);
         created.canvas.removeEventListener('pointerup', endDrag);
         created.canvas.removeEventListener('pointercancel', endDrag);
+        created.canvas.removeEventListener('wheel', onWheel);
       };
       scene.setDragged(() => travelled > DRAG_THRESHOLD);
 

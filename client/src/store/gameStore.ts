@@ -46,6 +46,12 @@ export interface GameState {
    */
   showSignatures: boolean;
   /**
+   * Whether the other players' boards are drawn. Off by default: four boards
+   * are taller than any window, and the one that got cut off the bottom was
+   * always the last seat — with nothing on screen to say it was there.
+   */
+  showOpponents: boolean;
+  /**
    * Server clock minus this device's, from the last state received. Turn
    * deadlines are stamped on the server, so a device whose clock is off would
    * otherwise run the countdown out early or never.
@@ -65,6 +71,7 @@ const initial: GameState = {
   toasts: [],
   myTurnAnnounced: false,
   showSignatures: false,
+  showOpponents: false,
   clockOffset: 0,
 };
 
@@ -165,6 +172,7 @@ const send = (type: string, payload?: unknown): void => room?.send(type, payload
 
 export const actions = {
   toggleSignatures: () => set((current) => ({ showSignatures: !current.showSignatures })),
+  toggleOpponents: () => set((current) => ({ showOpponents: !current.showOpponents })),
 
   host: (name: string) => connect(() => createRoom(name, handlers)),
   join: (roomId: string, name: string) => connect(() => joinRoom(roomId.trim(), name, handlers)),

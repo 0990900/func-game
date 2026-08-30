@@ -342,7 +342,9 @@ main.is-drafting .table-canvas { position: absolute; inset: 0; }
 .goal-chip-progress { margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; }
 .goal-chip-met { color: var(--accent); font-weight: 900; }
 
-.dock-triggers { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+/* Six controls: two view toggles and four sheets. Three to a row wraps evenly
+   on a phone instead of leaving one stranded at the end. */
+.dock-triggers { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
 .dock-trigger {
   display: grid; place-items: center; gap: 1px; min-height: 46px; padding: 0;
   border: 1px solid var(--line); background: var(--surface-2); color: var(--muted);
@@ -413,7 +415,9 @@ main.is-drafting .table-canvas { position: absolute; inset: 0; }
   .dock { grid-template-columns: 1fr auto; align-items: stretch; }
   .dock .goal-chip { grid-column: 1; }
   .dock-triggers, .dock-confirm { grid-column: 2; }
-  .dock-triggers { grid-template-columns: repeat(4, 92px); }
+  /* All six on one line: a wide dock has the room, and a wrapped second row
+     costs the table 46px of height it needs more. */
+  .dock-triggers { grid-template-columns: repeat(6, 92px); }
   .dock-actions { grid-template-columns: auto auto; }
 }
 

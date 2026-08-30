@@ -36,6 +36,7 @@ export function Dock({
   readonly onOpenSheet: (sheet: SheetName | null) => void;
 }) {
   const showSignatures = useGame((s) => s.showSignatures);
+  const showOpponents = useGame((s) => s.showOpponents);
   const selectedCardId = useGame((s) => s.selectedCardId);
   const selectedMarketId = useGame((s) => s.selectedMarketId);
   const claiming = Boolean(me?.canFinishClaim);
@@ -93,6 +94,15 @@ export function Dock({
           >
             <span aria-hidden="true">↻</span>
             수식
+          </button>
+          <button
+            type="button"
+            className={`dock-trigger${showOpponents ? ' is-open' : ''}`}
+            aria-pressed={showOpponents}
+            onClick={() => actions.toggleOpponents()}
+          >
+            <span aria-hidden="true">◎</span>
+            상대
           </button>
           {TRIGGERS.map((trigger) => (
             <button

@@ -169,6 +169,8 @@ export interface TableInput {
   readonly previewMarketId: string | null;
   /** Study mode: the top row shows each card's type instead of its face. */
   readonly showSignatures: boolean;
+  /** Draw the other players' boards as well as mine. */
+  readonly showOpponents: boolean;
 }
 
 const heading = (text: string, color = MUTED) =>
@@ -272,9 +274,20 @@ export class TableScene {
   }
 
   /** Scrolls the table by a drag, in pixels. */
-  scrollBy(delta: number): void {
+  /**
+   * Scrolls the table. Returns whether it actually moved, so a wheel event over
+   * a table with nothing left to show can fall through to the page.
+   */
+  scrollBy(delta: number): boolean {
+    const before = this.scrollY;
     this.scrollY += delta;
     this.clampScroll();
+    return this.scrollY !== before;
+  }
+
+  /** How much of the table is below the fold. Zero when it all fits. */
+  hiddenBelow(): number {
+    return Math.max(0, this.contentHeight - this.viewportHeight - this.scrollY);
   }
 
   /** Returns to the hand, which is where a cancelled pick starts again. */
@@ -348,7 +361,8 @@ export class TableScene {
   update(input: TableInput): number {
     this.lastInput = input;
     const {
-      state, selectedCardId, selectedMarketId, previewCardId, previewMarketId, showSignatures,
+      state, selectedCardId, selectedMarketId, previewCardId, previewMarketId,
+      showSignatures, showOpponents,
     } = input;
     // Sprites bake their size, so a resize that changes card geometry has to
     // rebuild them rather than reuse cards drawn at the old dimensions.
@@ -449,7 +463,7 @@ export class TableScene {
     ].filter((entry): entry is GuideFocus => entry.card !== null);
     y = this.layoutSelectionGuide(state, focus, y + GAP, PAD, cardsWidth);
 
-    const areasEnd = this.layoutPlayAreas(state, split ? PAD : y + GAP, areasLeft, areasWidth);
+    const areasEnd = this.layoutPlayAreas(state, split ? PAD : y + GAP, areasLeft, areasWidth, showOpponents);
     y = split ? Math.max(y, areasEnd) : areasEnd;
 
     // A card that left the hand or market is now a chip; fly the old sprite to
@@ -633,7 +647,13 @@ export class TableScene {
     return top + rows * (cardHeight + GAP);
   }
 
-  private layoutPlayAreas(state: PublicState, startY: number, left: number, width: number): number {
+  private layoutPlayAreas(
+    state: PublicState,
+    startY: number,
+    left: number,
+    width: number,
+    showOpponents: boolean,
+  ): number {
     // Chips and their labels are rebuilt every update, so the old ones are
     // destroyed rather than just detached — detaching alone left them alive and
     // they reappeared as ghosts at the foot of the table. Their tweens go too,
@@ -645,6 +665,7 @@ export class TableScene {
     let y = startY;
     const narrow = width < AREA_SPLIT_WIDTH;
     const me = state.players.find((player) => player.id === state.me?.id) ?? null;
+    const others = state.players.filter((player) => player.id !== me?.id);
 
     // Narrow screens put my typeclasses above everything: what I am building
     // towards outranks a record of what four seats have already played.
@@ -655,14 +676,20 @@ export class TableScene {
       y = this.layoutTypeclasses(me, y + ROW_LABEL, left, width) + GAP;
     }
 
-    const label = heading('플레이 영역');
+    // Four boards are taller than any window, so only mine is drawn until the
+    // others are asked for. Hiding them is what makes the rest reachable; a
+    // scrollbar only made the problem findable.
+    const label = heading(
+      showOpponents ? '플레이 영역' : `플레이 영역 · 내 것만 (상대 ${others.length}명 숨김)`,
+    );
     label.position.set(left, y);
     this.areaLayer.addChild(label);
     y += ROW_LABEL;
 
-    // My own board first on a narrow screen, then everyone else in seat order.
-    const order = narrow && me
-      ? [me, ...state.players.filter((player) => player.id !== me.id)]
+    // Mine first, always: it is the one board being played, and the one whose
+    // bottom row must never be the thing that falls off the screen.
+    const order = me
+      ? (showOpponents ? [me, ...others] : [me])
       : state.players;
 
     for (const player of order) {
