@@ -45,8 +45,48 @@ export async function createRoom(name: string, handlers: Handlers): Promise<Game
   return bind(await client.create('draft', { name }), handlers);
 }
 
-export async function joinRoom(roomId: string, name: string, handlers: Handlers): Promise<GameRoom> {
-  return bind(await client.joinById(roomId, { name }), handlers);
+export async function joinRoom(
+  roomId: string,
+  name: string,
+  handlers: Handlers,
+  observe = false,
+): Promise<GameRoom> {
+  return bind(await client.joinById(roomId, { name, observe }), handlers);
+}
+
+/** What a room says about itself to anyone who has not joined it. */
+export interface RoomSummary {
+  readonly roomId: string;
+  readonly host: string;
+  readonly phase: string;
+  /** Seats held by people. The rest are filled with bots when the game starts. */
+  readonly humans: number;
+  readonly seats: number;
+  readonly observers: number;
+}
+
+/**
+ * The rooms currently open, for the lobby list.
+ *
+ * Read over HTTP from the server's own `/rooms` endpoint. The SDK's
+ * room-listing helper was dropped, and the matchmaker answers without any
+ * connection or seat being taken. What comes back is only what a room chose to
+ * publish about itself; a room's state is never in it.
+ */
+export async function listRooms(): Promise<RoomSummary[]> {
+  const base = endpoint().replace(/^ws/, 'http');
+  const response = await fetch(`${base}/rooms`);
+  if (!response.ok) throw new Error(`방 목록을 불러오지 못했습니다 (${response.status})`);
+
+  const rooms = (await response.json()) as ReadonlyArray<Record<string, unknown>>;
+  return rooms.map((room) => ({
+    roomId: String(room['roomId'] ?? ''),
+    host: typeof room['host'] === 'string' ? room['host'] : 'Player',
+    phase: typeof room['phase'] === 'string' ? room['phase'] : 'lobby',
+    humans: Number(room['humans'] ?? room['clients'] ?? 0),
+    seats: Number(room['seats'] ?? 0),
+    observers: Number(room['observers'] ?? 0),
+  }));
 }
 
 export async function resumeRoom(token: string, handlers: Handlers): Promise<GameRoom> {

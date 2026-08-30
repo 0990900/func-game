@@ -157,3 +157,35 @@ test('a disconnect shows up for everyone', () => {
   assert.equal(state.players[1]!.status, 'disconnected');
   assert.equal(state.events[0]!.type, 'disconnect');
 });
+
+test('the host can clear a seat before the game starts', () => {
+  const table = createTable('A');
+  const guest = table.run(Command.joinRoom('B'))!;
+  const host = table.room.hostPlayerId;
+  assert.equal(table.room.players.length, 2);
+
+  table.run(Command.kickPlayer(host, guest.id));
+  assert.deepEqual(table.room.players.map((player) => player.id), [host]);
+  // `room.events` is oldest first; only the projection reverses it.
+  assert.equal(table.room.events.at(-1)!.type, 'disconnect');
+  assert.match(table.room.events.at(-1)!.message, /나갔습니다/);
+});
+
+test('who may not be removed, and when', () => {
+  const table = createTable('A');
+  const guest = table.run(Command.joinRoom('B'))!;
+  const host = table.room.hostPlayerId;
+
+  assert.match(table.expectError(Command.kickPlayer(guest.id, host)).message, /방장만/);
+  assert.match(table.expectError(Command.kickPlayer(host, host)).message, /방장은 내보낼 수 없습니다/);
+
+  table.run(Command.joinRoom('C'));
+  table.run(Command.joinRoom('D'));
+  table.run(Command.startGame(host));
+  assert.match(
+    table.expectError(Command.kickPlayer(host, guest.id)).message,
+    /시작된 뒤에는/,
+    'a running draft has fixed seats and a turn pointing at one of them',
+  );
+  assert.equal(table.room.players.length, 4, 'a refused kick changes nothing');
+});

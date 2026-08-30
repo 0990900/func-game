@@ -699,19 +699,17 @@ export class TableScene {
 
     // Four boards are taller than any window, so only mine is drawn until the
     // others are asked for. Hiding them is what makes the rest reachable; a
-    // scrollbar only made the problem findable.
-    const label = heading(
-      showOpponents ? '플레이 영역' : `플레이 영역 · 내 것만 (상대 ${others.length}명 숨김)`,
-    );
+    // scrollbar only made the problem findable. An observer has no board of
+    // their own, so there is nothing to hide the others in favour of.
+    const hiding = Boolean(me) && !showOpponents;
+    const label = heading(hiding ? `플레이 영역 · 내 것만 (상대 ${others.length}명 숨김)` : '플레이 영역');
     label.position.set(left, y);
     this.areaLayer.addChild(label);
     y += ROW_LABEL;
 
     // Mine first, always: it is the one board being played, and the one whose
     // bottom row must never be the thing that falls off the screen.
-    const order = me
-      ? (showOpponents ? [me, ...others] : [me])
-      : state.players;
+    const order = me ? (hiding ? [me] : [me, ...others]) : state.players;
 
     for (const player of order) {
       const isMe = player.id === state.me?.id;

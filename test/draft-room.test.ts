@@ -217,4 +217,30 @@ test('DraftRoom runs a game over Colyseus with per-viewer projection', async (t)
     assert.equal(later.scoreLog.length, later.progress.turnsCompleted, 'the score log kept up');
     assert.equal(idle.errors.length, 0, idle.errors.join(' / '));
   });
+
+  await t.test('the host can remove a player, and watching takes no seat', async () => {
+    const lobby = await colyseus.createRoom<DraftRoom>('draft', { name: 'Host' });
+    const host = watch(await colyseus.connectTo(lobby, { name: 'Host' }));
+    const guest = watch(await colyseus.connectTo(lobby, { name: 'Guest' }));
+    const watcher = watch(await colyseus.connectTo(lobby, { name: '아무개', observe: true }));
+    await delay(SETTLE);
+
+    assert.equal(host.state().players.length, 2, 'watching is not sitting down');
+    assert.equal(watcher.state().me, null, 'an observer has no seat of their own');
+
+    const guestId = guest.state().me!.id;
+    host.room.send('kick_player', { playerId: guestId });
+    await delay(SETTLE);
+
+    assert.deepEqual(host.state().players.map((player) => player.name), ['Host']);
+    assert.equal(host.errors.length, 0, host.errors.join(' / '));
+
+    // And the seat cannot be taken by someone who is not the host.
+    const second = watch(await colyseus.connectTo(lobby, { name: 'Second' }));
+    await delay(SETTLE);
+    second.room.send('kick_player', { playerId: host.state().me!.id });
+    await delay(SETTLE);
+    assert.equal(second.errors.length, 1, 'only the host may remove anyone');
+    assert.equal(host.state().players.length, 2, 'and nobody was removed');
+  });
 });

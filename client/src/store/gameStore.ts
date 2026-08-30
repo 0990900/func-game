@@ -176,6 +176,8 @@ export const actions = {
 
   host: (name: string) => connect(() => createRoom(name, handlers)),
   join: (roomId: string, name: string) => connect(() => joinRoom(roomId.trim(), name, handlers)),
+  /** Joins to watch: no seat, no actions, no score. */
+  observe: (roomId: string) => connect(() => joinRoom(roomId.trim(), '관전자', handlers, true)),
 
   /** Attempts to retake a seat after a refresh. Silent when there is nothing to resume. */
   resume: async (): Promise<boolean> => {
@@ -200,6 +202,7 @@ export const actions = {
 
   startGame: () => send('start_game'),
   restartGame: () => send('restart_game'),
+  kickPlayer: (playerId: string) => send('kick_player', { playerId }),
   chooseGoal: (goalId: string) => send('choose_goal', { goalId }),
 
   selectCard: (cardId: string) =>

@@ -103,6 +103,23 @@ export function joinRoom(deps: RuleDeps, room: Room, name: string): Player {
   return player;
 }
 
+/**
+ * Removes a player from the room before the game starts.
+ *
+ * Only in the lobby: seats, turn order and the deck are all fixed once a game
+ * is under way, and pulling a chair out from under a running draft would leave
+ * the turn pointing at nobody. The host cannot be removed — there would be no
+ * one left who could start the game.
+ */
+export function kickPlayer(deps: RuleDeps, room: Room, playerId: string): void {
+  if (room.phase !== 'lobby') throw ruleError('게임이 시작된 뒤에는 내보낼 수 없습니다.');
+  if (playerId === room.hostPlayerId) throw ruleError('방장은 내보낼 수 없습니다.');
+  const player = mustPlayer(room, playerId);
+
+  room.players = room.players.filter((candidate) => candidate.id !== playerId);
+  addEvent(deps, room, 'disconnect', `${player.name}님이 방에서 나갔습니다.`, playerId);
+}
+
 export function addBotsToFour(deps: RuleDeps, room: Room): void {
   let i = 1;
   while (room.players.length < MAX_PLAYERS) room.players.push(createPlayer(deps, `Bot ${i++}`, true));

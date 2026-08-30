@@ -50,8 +50,20 @@ function StatusBar() {
       ) : (
         <span className="status-progress"><b>{phaseName(state.phase)}</b></span>
       )}
+      {/* An observer holds no seat, which is otherwise invisible: the table
+          looks the same and nothing ever becomes their turn. */}
+      {!state.me && <span className="pill">관전 중</span>}
       {state.phase === 'draft' ? <TurnDots state={state} /> : (
         <span className="status-room">방 <b className="room-code">{roomCode}</b></span>
+      )}
+      {/* Leaving was only offered in the lobby and after the final score, which
+          left the middle of a game — the one place someone might actually want
+          out of — with no way out but closing the tab. Those two screens have
+          their own action row, so this appears only where nothing else does. */}
+      {(state.phase === 'goal' || state.phase === 'draft') && (
+        <button type="button" className="status-leave" onClick={() => void actions.leave()}>
+          나가기
+        </button>
       )}
     </div>
   );
