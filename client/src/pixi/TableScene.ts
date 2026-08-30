@@ -12,7 +12,7 @@ import { EffectLayer } from './effects.ts';
 import { dealIn, killTweens, moveTo, pulse } from './motion.ts';
 import type { Point } from './motion.ts';
 import type { TableTextures } from './assets.ts';
-import { cardFace, statusName } from '../theme/meta.ts';
+import { containerMeta, statusName } from '../theme/meta.ts';
 import { palette, toHexNumber } from '../theme/tokens.ts';
 import { containers } from '../../../src/core/cards.ts';
 import { isNarrow } from '../ui/viewport.ts';
@@ -22,7 +22,9 @@ const GAP = 12;
 const PAD = 16;
 /** Chips snap to a column grid so their left edges line up down the rows. */
 const CHIP_GAP = 6;
-const CHIP_COLUMN = 96;
+const CHIP_COLUMN = 74;
+/** Width of the group label that names the container a row belongs to. */
+const GROUP_LABEL_WIDTH = 84;
 /** A full hand. Cards shrink a little to keep it on one row when they nearly fit. */
 const HAND_SIZE = 5;
 /** Narrowest a fanned card's visible strip may get and still show its emblem. */
@@ -40,6 +42,15 @@ export interface TableCallbacks {
   readonly onSelectMarket: (card: Card) => void;
   /** Tapping the table away from any card puts the current choice back. */
   readonly onCancel: () => void;
+}
+
+interface ChipGroup {
+  readonly key: string;
+  readonly label: string;
+  readonly order: number;
+  readonly tint: number;
+  /** Card text to how many of it the player holds. */
+  readonly entries: Map<string, number>;
 }
 
 export interface TableInput {
@@ -476,65 +487,99 @@ export class TableScene {
   }
 
   /**
-   * Play areas are read to judge what someone is building, so the cards are
-   * grouped by container rather than left in the order they were played — the
-   * order carries no meaning and the grouping is the whole question.
+   * A play area, as one row per container.
+   *
+   * Cards are grouped under the container they belong to and duplicates are
+   * counted rather than drawn twice, so a row reads as "what this player has
+   * for Maybe" instead of a wall of repeated names. Naming the container once
+   * on the left also shortens every chip: `Maybe.chain` becomes `chain`.
    */
-  private sortedChips(cards: readonly Card[]): Card[] {
-    const rank = (card: Card): number => {
-      if (card.kind === 'utility') return containers.length + 1;
-      if (card.kind.includes('wildcard') && card.container === '*') return containers.length;
-      const index = containers.indexOf(card.container as ContainerName);
-      return index < 0 ? containers.length : index;
+  private groupChips(cards: readonly Card[]): ChipGroup[] {
+    const groups = new Map<string, ChipGroup>();
+
+    const groupOf = (card: Card): { key: string; label: string; order: number } => {
+      if (card.kind === 'utility') {
+        return { key: 'utility', label: 'λ Utility', order: containers.length + 1 };
+      }
+      if (card.container === '*') {
+        return { key: 'joker', label: '✦ 조커', order: containers.length };
+      }
+      const name = card.container as ContainerName;
+      const index = containers.indexOf(name);
+      return {
+        key: name,
+        label: `${containerMeta[name]?.symbol ?? ''} ${name}`,
+        order: index < 0 ? containers.length : index,
+      };
     };
-    return [...cards].sort((a, b) => rank(a) - rank(b) || a.label.localeCompare(b.label));
+
+    for (const card of cards) {
+      const { key, label, order } = groupOf(card);
+      let group = groups.get(key);
+      if (!group) {
+        group = { key, label, order, tint: cardColor(card), entries: new Map() };
+        groups.set(key, group);
+      }
+      // The group already names the container, so the chip only carries what
+      // differs inside it. A container wildcard becomes a bare star rather than
+      // repeating the container it is filed under.
+      const text = card.kind === 'container-wildcard'
+        ? '＊ 아무 연산'
+        : card.kind === 'container-function' || card.kind === 'utility'
+          ? card.operation
+          : card.label;
+      group.entries.set(text, (group.entries.get(text) ?? 0) + 1);
+    }
+
+    return [...groups.values()].sort((a, b) => a.order - b.order);
   }
 
-  /**
-   * Chips sit on a column grid: each one takes whole columns, so left edges
-   * line up down the rows instead of drifting with the length of every label.
-   */
   private layoutChips(cards: readonly Card[], startY: number): number {
-    const available = this.width - PAD * 2;
+    const contentLeft = PAD + GROUP_LABEL_WIDTH + CHIP_GAP;
+    const available = this.width - PAD - contentLeft;
     const columns = Math.max(1, Math.floor((available + CHIP_GAP) / (CHIP_COLUMN + CHIP_GAP)));
     const columnWidth = Math.floor((available - (columns - 1) * CHIP_GAP) / columns);
 
-    let column = 0;
     let y = startY;
 
-    for (const card of this.sortedChips(cards)) {
-      const face = cardFace(card);
-      const tint = cardColor(card);
-      const text = body(`${face.containerSymbol} ${card.label}`, 12);
-      // n columns hold n*columnWidth + (n-1)*gap, so the gap has to be added to
-      // the requirement before dividing — otherwise a label that needs a few
-      // pixels more than one column is given one and clipped.
-      const needed = text.width + 18;
-      const span = Math.min(
-        columns,
-        Math.max(1, Math.ceil((needed + CHIP_GAP) / (columnWidth + CHIP_GAP))),
-      );
+    for (const group of this.groupChips(cards)) {
+      const label = body(group.label, 12, group.tint);
+      label.position.set(PAD, y + 5);
+      this.areaLayer.addChild(label);
 
-      if (column + span > columns) {
-        column = 0;
-        y += CHIP_HEIGHT;
+      let column = 0;
+      for (const [text, count] of [...group.entries].sort((a, b) => a[0].localeCompare(b[0]))) {
+        const chip = body(count > 1 ? `${text} ×${count}` : text, 12);
+        // n columns hold n*columnWidth + (n-1)*gap, so the gap belongs on the
+        // requirement before dividing, or a chip a few pixels too wide for one
+        // column would be given one and clipped.
+        const span = Math.min(
+          columns,
+          Math.max(1, Math.ceil((chip.width + 18 + CHIP_GAP) / (columnWidth + CHIP_GAP))),
+        );
+
+        if (column + span > columns) {
+          column = 0;
+          y += CHIP_HEIGHT;
+        }
+
+        const x = contentLeft + column * (columnWidth + CHIP_GAP);
+        const width = span * columnWidth + (span - 1) * CHIP_GAP;
+
+        const box = new Graphics()
+          .roundRect(x, y, width, 24, 3)
+          .fill({ color: group.tint, alpha: 0.08 })
+          .stroke({ width: 1, color: group.tint });
+        chip.position.set(x + 9, y + 5);
+        const clip = new Graphics().rect(x, y, width - 6, 24).fill(0xffffff);
+        chip.mask = clip;
+
+        this.areaLayer.addChild(box, clip, chip);
+        column += span;
       }
 
-      const x = PAD + column * (columnWidth + CHIP_GAP);
-      const width = span * columnWidth + (span - 1) * CHIP_GAP;
-
-      const chip = new Graphics()
-        .roundRect(x, y, width, 24, 3)
-        .fill({ color: tint, alpha: 0.08 })
-        .stroke({ width: 1, color: tint });
-      // Clip the label to its chip so a long name cannot spill into the next.
-      text.position.set(x + 9, y + 5);
-      const clip = new Graphics().rect(x, y, width - 6, 24).fill(0xffffff);
-      text.mask = clip;
-
-      this.areaLayer.addChild(chip, clip, text);
-      column += span;
+      y += CHIP_HEIGHT;
     }
-    return y + CHIP_HEIGHT;
+    return y;
   }
 }
