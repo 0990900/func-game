@@ -10,7 +10,7 @@
  * consulted *between* decisions — the combo reference, scores, the log, an
  * opponent's full board — is a tap away in a sheet.
  */
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { TableCanvas } from '../pixi/TableCanvas.tsx';
 import { BottomSheet } from './BottomSheet.tsx';
 import { ComboGuide } from './ComboGuide.tsx';
@@ -75,6 +75,18 @@ export function GameTable({ state }: { readonly state: PublicState }) {
   // way. The combo guide is the exception — it is what you consult *to* decide,
   // so it stays and re-reads the selection instead of closing.
   if (selectedCardId && sheet && sheet !== 'combos') setSheet(null);
+
+  // Escape backs out of one thing at a time: an open sheet first, since that is
+  // what the player just opened, and only then the card they were holding.
+  // A sheet closes itself, so this only has to cover the card.
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key !== 'Escape' || sheet) return;
+      actions.clearPick();
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [sheet]);
 
   const goal = state.me?.goal ?? null;
   const playArea = mySeat?.playArea ?? [];

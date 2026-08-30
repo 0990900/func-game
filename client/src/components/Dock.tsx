@@ -11,7 +11,6 @@
  */
 import { GoalProgress } from './GoalProgress.tsx';
 import { actions, useGame } from '../store/gameStore.ts';
-import { scrollPageTo } from '../ui/scroll.ts';
 import type { Card, Goal, PublicMe } from '../../../src/core/types.ts';
 
 export type SheetName = 'goal' | 'combos' | 'score' | 'log';
@@ -75,10 +74,7 @@ export function Dock({
             <button
               type="button"
               className="secondary"
-              onClick={() => {
-                actions.clearPick();
-                scrollPageTo(0);
-              }}
+              onClick={actions.clearPick}
             >
               취소
             </button>

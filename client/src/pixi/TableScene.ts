@@ -33,6 +33,8 @@ const ACCENT = toHexNumber(palette.accent);
 export interface TableCallbacks {
   readonly onSelectHand: (card: Card) => void;
   readonly onSelectMarket: (card: Card) => void;
+  /** Tapping the table away from any card puts the current choice back. */
+  readonly onCancel: () => void;
 }
 
 export interface TableInput {
@@ -102,6 +104,14 @@ export class TableScene {
     app.stage.addChild(this.root);
     // Added last so a card in flight draws above the table, not under it.
     this.effects = new EffectLayer(app.stage, textures.particles);
+
+    // The felt itself is a target. Cards sit in sibling layers above it, so it
+    // only receives a tap that missed every card — which is what "empty space"
+    // means here.
+    this.background.eventMode = 'static';
+    this.background.on('pointertap', () => {
+      if (!this.wasDragged()) this.callbacks.onCancel();
+    });
   }
 
   resize(width: number): void {
@@ -128,6 +138,12 @@ export class TableScene {
   /** Scrolls the table by a drag, in pixels. */
   scrollBy(delta: number): void {
     this.scrollY += delta;
+    this.clampScroll();
+  }
+
+  /** Returns to the hand, which is where a cancelled pick starts again. */
+  scrollToTop(): void {
+    this.scrollY = 0;
     this.clampScroll();
   }
 

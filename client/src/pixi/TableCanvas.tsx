@@ -65,9 +65,10 @@ export function TableCanvas() {
       scene = new TableScene(created, textures, {
         onSelectHand: (card) => actions.selectCard(card.id),
         onSelectMarket: (card) => actions.selectMarket(card.id),
+        onCancel: () => actions.clearPick(),
       }, host.clientWidth || 640);
 
-      let lastSelected: string | null = null;
+      let lastChoice: string | null = null;
 
       const draw = (): void => {
         const {
@@ -83,8 +84,13 @@ export function TableCanvas() {
         scene.setViewport(host.clientWidth || 640, available, content);
         app.renderer.resize(host.clientWidth || 640, available);
 
-        if (selectedCardId && !lastSelected) scene.revealMarket();
-        lastSelected = selectedCardId;
+        // Choosing brings the market into view; letting go of the choice —
+        // by button, by tapping the felt, by Escape, or by playing the card —
+        // brings the hand back.
+        const choice = selectedCardId ?? previewCardId;
+        if (selectedCardId && !lastChoice) scene.revealMarket();
+        else if (!choice && lastChoice) scene.scrollToTop();
+        lastChoice = choice;
       };
 
       draw();

@@ -10,7 +10,7 @@ import { createStore } from 'zustand/vanilla';
 import { useStore } from 'zustand';
 import type { PublicState } from '../../../src/core/types.ts';
 import { createRoom, joinRoom, resumeRoom } from '../net/connection.ts';
-import { isNarrow } from '../ui/scroll.ts';
+import { isNarrow } from '../ui/viewport.ts';
 import type { GameRoom, Handlers } from '../net/connection.ts';
 
 export type ConnectionPhase = 'idle' | 'connecting' | 'connected' | 'reconnecting' | 'error';
