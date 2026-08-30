@@ -120,7 +120,7 @@ function TableFallback({ state }: { readonly state: PublicState }) {
 function TypeclassButtons({ state }: { readonly state: PublicState }) {
   const mine = state.players.find((player) => player.id === state.me?.id)?.playArea ?? [];
   const built = new Set(scoringCombos(mine).map((combo) => `${combo.container}:${combo.name}`));
-  const claimed = new Set(state.players.flatMap((player) => player.claims));
+  const claimed = new Set(state.players.flatMap((player) => player.claimGroups.flat()));
 
   return (
     <div className="sr-hand">

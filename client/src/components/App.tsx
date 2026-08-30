@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { EntryScreen } from './EntryScreen.tsx';
 import { LobbyScreen } from './LobbyScreen.tsx';
 import { GoalScreen } from './GoalScreen.tsx';
@@ -6,6 +6,7 @@ import { GameTable } from './GameTable.tsx';
 import { FinishedScreen } from './FinishedScreen.tsx';
 import { TurnClock } from './TurnClock.tsx';
 import { actions, useGame } from '../store/gameStore.ts';
+import { bindSound, sound } from '../ui/sound.ts';
 import { directionName, phaseName, statusName } from '../theme/meta.ts';
 import type { PublicState } from '../../../src/core/types.ts';
 
@@ -25,6 +26,35 @@ const connectionLabel: Record<string, string> = {
  * The room code is only useful before the game starts (a started room is full),
  * so it gives way to progress once the draft begins.
  */
+/**
+ * Sound on or off, remembered between visits.
+ *
+ * In the status bar rather than a settings screen: it is the control people
+ * reach for first and in a hurry, usually because someone walked into the room.
+ * The state lives in the sound module, not the store — nothing else in the app
+ * cares, and rendering does not depend on it.
+ */
+function MuteButton() {
+  const [muted, setMuted] = useState(() => sound.isMuted());
+  return (
+    <button
+      type="button"
+      className="status-leave"
+      aria-pressed={muted}
+      aria-label={muted ? '소리 켜기' : '소리 끄기'}
+      title={muted ? '소리 켜기' : '소리 끄기'}
+      onClick={() => {
+        sound.setMuted(!muted);
+        setMuted(!muted);
+        // Confirm the new state with the thing being switched on.
+        if (muted) sound.play('place');
+      }}
+    >
+      {muted ? '소리 켜기' : '소리 끄기'}
+    </button>
+  );
+}
+
 function StatusBar() {
   const state = useGame((s) => s.state);
   const roomCode = useGame((s) => s.roomCode);
@@ -60,6 +90,7 @@ function StatusBar() {
           left the middle of a game — the one place someone might actually want
           out of — with no way out but closing the tab. Those two screens have
           their own action row, so this appears only where nothing else does. */}
+      <MuteButton />
       {(state.phase === 'goal' || state.phase === 'draft') && (
         <button type="button" className="status-leave" onClick={() => void actions.leave()}>
           나가기
@@ -118,6 +149,8 @@ export function App() {
 
   // A refresh mid-game should land back in the same seat, not on the entry screen.
   useEffect(() => { void actions.resume(); }, []);
+  // Audio cannot start itself; this waits for the player's first click or key.
+  useEffect(bindSound, []);
 
   const myTurn = Boolean(state?.me?.isMyTurn);
 

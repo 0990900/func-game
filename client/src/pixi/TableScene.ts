@@ -778,7 +778,7 @@ export class TableScene {
    * wherever they sit.
    */
   private layoutTypeclasses(player: PublicPlayer, startY: number, left: number, width: number): number {
-    const claims = new Set(player.claims);
+    const claims = new Set(player.claimGroups.flat());
     const built = scoringCombos(player.playArea);
     const columns = TYPECLASS_COLUMNS;
     const cellWidth = Math.min(
@@ -914,7 +914,7 @@ export class TableScene {
     // taking this card is the only honest answer to "what does this get me".
     const scoringAfter = new Set(scoringCombos(after).map((combo) => `${combo.container}:${combo.name}`));
     // A claim is gone once anyone has declared it, so the point is off the table.
-    const taken = new Set(state.players.flatMap((player) => player.claims));
+    const taken = new Set(state.players.flatMap((player) => player.claimGroups.flat()));
 
     const rows = comboDefinitions
       .flatMap((definition) =>

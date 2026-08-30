@@ -85,9 +85,7 @@ function project(
       connected: p.connected,
       playArea: p.playArea,
       claimCount: p.claimGroups.reduce((sum, group) => sum + group.length, 0),
-      // Flattened for everyone who only needs to know which combos are taken;
-      // the grouping matters to the final breakdown alone.
-      claims: p.claimGroups.flat(),
+      claimGroups: p.claimGroups,
       cardCount: p.playArea.length,
       status: playerStatus(room, p),
       publicScore: publicScore(p),

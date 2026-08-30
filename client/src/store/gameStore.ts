@@ -11,6 +11,7 @@ import { useStore } from 'zustand';
 import type { PublicState } from '../../../src/core/types.ts';
 import { createRoom, joinRoom, resumeRoom } from '../net/connection.ts';
 import { isNarrow } from '../ui/viewport.ts';
+import { sound } from '../ui/sound.ts';
 import type { GameRoom, Handlers } from '../net/connection.ts';
 
 export type ConnectionPhase = 'idle' | 'connecting' | 'connected' | 'reconnecting' | 'error';
@@ -95,30 +96,52 @@ export function pushToast(text: string): void {
   setTimeout(() => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== toast.id) })), 2500);
 }
 
-/** Title, toast and a short beep when the turn becomes ours — ported from the legacy client. */
+/** Title, toast and a cue when the turn becomes ours. */
 function announceMyTurn(): void {
   document.title = '내 턴! · FP Draft';
   pushToast('내 턴입니다. 뽑은 카드를 선택하세요.');
-  try {
-    const audio = new AudioContext();
-    const oscillator = audio.createOscillator();
-    const gain = audio.createGain();
-    oscillator.frequency.value = 660;
-    gain.gain.setValueAtTime(0.04, audio.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, audio.currentTime + 0.18);
-    oscillator.connect(gain);
-    gain.connect(audio.destination);
-    oscillator.start();
-    oscillator.stop(audio.currentTime + 0.18);
-  } catch {
-    // Audio is a nicety; a blocked AudioContext must not break the turn.
+  sound.play('turn');
+}
+
+/**
+ * The sounds this state change earns, if any.
+ *
+ * Only what this player did or is being asked to do. A cue for every seat's
+ * every turn is sixty sounds a game from three people you are not, which is a
+ * mute button being pressed rather than a game feeling alive.
+ */
+function announce(previous: PublicState | null, next: PublicState): void {
+  const meId = next.me?.id;
+  if (!meId) return;
+
+  if (next.phase === 'finished' && previous?.phase !== 'finished') {
+    sound.play('finish');
+    return;
   }
+
+  // The event log is authoritative about what just happened, and its newest
+  // entry is the one this broadcast carries.
+  const latest = next.events[0];
+  if (!latest || latest.playerId !== meId) return;
+  if (latest.id === previous?.events[0]?.id) return;
+
+  if (latest.type === 'claim') {
+    // How many were declared together, read off the state rather than out of
+    // the sentence describing it: the message is for people, and a regex over
+    // it would break the day the wording changed.
+    const groups = next.players.find((player) => player.id === meId)?.claimGroups ?? [];
+    sound.play('claim', groups[groups.length - 1]?.length ?? 1);
+    return;
+  }
+  if (latest.type === 'market') sound.play('swap');
+  else if (latest.type === 'pick') sound.play('place');
 }
 
 const handlers: Handlers = {
   onState: (next, serverNow) => {
     const previous = get().state;
     const becameMyTurn = Boolean(next.me?.isMyTurn) && !previous?.me?.isMyTurn;
+    announce(previous, next);
     if (becameMyTurn) announceMyTurn();
     else if (!next.me?.isMyTurn) document.title = 'FP Draft Game';
 

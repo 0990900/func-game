@@ -10,8 +10,9 @@
  * The deadline is stamped against the server's clock, so it is read through the
  * offset the store measured rather than against this device's idea of the time.
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useGame } from '../store/gameStore.ts';
+import { sound } from '../ui/sound.ts';
 
 /** Below this the clock is the thing to look at, and says so. */
 const URGENT_SECONDS = 10;
@@ -22,18 +23,34 @@ export function TurnClock() {
   const state = useGame((s) => s.state);
   const clockOffset = useGame((s) => s.clockOffset);
   const [now, setNow] = useState(() => Date.now());
+  /** The last whole second ticked, so each one is heard once. */
+  const ticked = useRef<number | null>(null);
 
   const endsAt = state?.turnEndsAt ?? null;
   const isMine = Boolean(state?.me?.isMyTurn);
   const running = endsAt !== null && isMine;
 
   useEffect(() => {
-    if (!running) return undefined;
+    if (!running) {
+      ticked.current = null;
+      return undefined;
+    }
     // Re-read immediately so a fresh deadline never shows a stale second.
     setNow(Date.now());
     const timer = window.setInterval(() => setNow(Date.now()), TICK_MS);
     return () => window.clearInterval(timer);
   }, [running, endsAt]);
+
+  // The clock ticks five times a second and the sound once, on each new whole
+  // second inside the warning window. Anything faster is an alarm.
+  useEffect(() => {
+    if (!running || endsAt === null) return;
+    const left = Math.ceil(Math.max(0, endsAt - (now + clockOffset)) / 1000);
+    if (left > URGENT_SECONDS || left <= 0) return;
+    if (ticked.current === left) return;
+    ticked.current = left;
+    sound.play('hurry');
+  }, [running, endsAt, now, clockOffset]);
 
   if (!running || endsAt === null) return null;
 

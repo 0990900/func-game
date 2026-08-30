@@ -180,10 +180,11 @@ export interface PublicPlayer {
   readonly playArea: readonly Card[];
   readonly claimCount: number;
   /**
-   * Combo keys this player has claimed, formatted `Container:Name`. Public:
-   * every claim is announced in the event log as it happens.
+   * Combo keys this player has claimed, grouped by the turn each group was
+   * declared on. Public: every claim is announced in the event log as it
+   * happens, and the grouping is what the bonus is computed from.
    */
-  readonly claims: readonly string[];
+  readonly claimGroups: ReadonlyArray<readonly string[]>;
   readonly cardCount: number;
   readonly status: PlayerStatus;
   readonly publicScore: ScoreBreakdown;
