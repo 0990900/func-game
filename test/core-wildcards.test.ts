@@ -77,17 +77,32 @@ test('the bug in one hand: a joker no longer finishes four containers at once', 
   assert.ok(!names.includes('Maybe:Monad'), 'and therefore cannot also be Maybe.chain');
 });
 
-test('a wildcard fills one slot, never two', () => {
+test('a wildcard settles on one operation, never two', () => {
   for (const cards of hands(300)) {
     const covered = allocateCoverage(cards);
     const printed = realSlots(cards);
     const standIns = [...covered].filter((s) => !printed.has(s));
+    const operations = new Set(standIns.map((s) => s.split(':')[1]));
     const available = cards.filter(isWildcard).length;
     assert.ok(
-      standIns.length <= available,
-      `${standIns.length} slots covered by ${available} wildcards: ${standIns.join(', ')}`,
+      operations.size <= available,
+      `${available} wildcards supplied ${operations.size} operations: ${standIns.join(', ')}`,
     );
   }
+});
+
+test('a blank container spreads, a printed one does not', () => {
+  // `*.map` leaves the container blank, so its map lands in all four at once.
+  const spreads = allocateCoverage([wild('map')]);
+  assert.equal(spreads.size, 4, `*.map should fill four slots, filled ${[...spreads].join(', ')}`);
+  for (const container of containers) assert.ok(spreads.has(`${container}:map`));
+  assert.equal(scoringCombos([wild('map')]).length, 4, 'four Functors off one card');
+
+  // `Maybe.*` has its container printed, so it serves Maybe and nowhere else.
+  const bound: Card = pick((c) => c.kind === 'container-wildcard' && c.container === 'Maybe')[0]!;
+  const stays = allocateCoverage([bound]);
+  assert.equal(stays.size, 1, `Maybe.* should fill one slot, filled ${[...stays].join(', ')}`);
+  assert.ok(stays.has('Maybe:map'));
 });
 
 test('an assigned slot serves every rung that asks for it, as a real card would', () => {
@@ -159,30 +174,35 @@ test('the same cards allocate the same way whatever order they arrive in', () =>
   }
 });
 
-test('a tie is broken the same way every time', () => {
-  // Four operation wildcards spell a Monad and nothing else. Every container can
-  // take it, so the printed order decides — and decides identically on every run.
+test('four blank-container wildcards spell a Monad everywhere, every time', () => {
+  // map, ap, pure and chain with the container left blank: each lands in all
+  // four containers, so all four ladders top out at once. This is the big turn
+  // the rule is meant to allow, and it has to come out the same on every run.
   const cards = [wild('map'), wild('ap'), wild('pure'), wild('chain')];
   const first = findCombos(cards).map((c) => `${c.container}:${c.name}`).sort();
   for (let i = 0; i < 5; i += 1) {
     assert.deepEqual(findCombos(shuffled(cards, i + 1)).map((c) => `${c.container}:${c.name}`).sort(), first);
   }
-  assert.ok(first.includes(`${containers[0]}:Monad`), 'the first printed container wins the tie');
-  assert.equal(first.filter((name) => name.endsWith(':Monad')).length, 1, 'only one Monad, not four');
+  assert.equal(first.filter((name) => name.endsWith(':Monad')).length, 4, 'a Monad in each container');
+  // And none of it can be claimed: no printed card of any container backs it.
+  assert.equal(claimableCombos(cards).length, 0, 'wildcards alone score but never claim');
 });
 
-test('the hand that scored 154 no longer does', () => {
+test('one joker cannot be chain in one place and traverse in another', () => {
+  // This is what the old pool allowed and what the rule now forbids: the joker
+  // picks an operation. As `chain` it tops Maybe's ladder off map/ap/pure; as
+  // `traverse` it finishes List's Traversable off map/reduce. It cannot do both,
+  // and the game takes the larger of the two.
   const cards = [
-    wild('map'), wild('ap'), wild('pure'), joker(),
-    real('Either', 'bimap'), real('List', 'traverse'), real('Maybe', 'alt'),
-    real('Task', 'map'), real('Either', 'map'), real('Maybe', 'zero'), real('List', 'reduce'),
-    ...pick((c) => c.kind === 'utility', 4),
+    real('Maybe', 'map'), real('Maybe', 'ap'), real('Maybe', 'pure'),
+    real('List', 'map'), real('List', 'reduce'), joker(),
   ];
-  // Four wildcards used to stand up a Monad in all four containers at once: 69
-  // combo points and a twelve-combo claim. Four wildcards can now fill four
-  // slots, so both numbers have to come down.
-  const standIns = [...allocateCoverage(cards)].filter((s) => !realSlots(cards).has(s));
-  assert.ok(standIns.length <= 4, `four wildcards covered ${standIns.length} slots`);
-  assert.ok(comboTotal(cards) < 69, `combo score is still ${comboTotal(cards)}`);
-  assert.ok(claimableCombos(cards).length < 12, `${claimableCombos(cards).length} combos claimable at once`);
+  const names = findCombos(cards).map((c) => `${c.container}:${c.name}`);
+  assert.ok(names.includes('List:Traversable'), 'traverse is worth 10, chain only 3 more');
+  assert.ok(!names.includes('Maybe:Monad'), 'so the joker is not also Maybe.chain');
+
+  const operations = new Set(
+    [...allocateCoverage(cards)].filter((s) => !realSlots(cards).has(s)).map((s) => s.split(':')[1]),
+  );
+  assert.deepEqual([...operations], ['traverse'], 'one joker, one operation');
 });

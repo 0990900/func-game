@@ -18,10 +18,10 @@ const slot = (container: ContainerName, operation: string): string => `${contain
 /**
  * Every slot a play area supplies, wildcards already assigned.
  *
- * A wildcard stands for ONE operation in ONE container. That slot then behaves
- * exactly like a real card and supports every combo needing it — an assigned
- * `Maybe.ap` feeds both Maybe Apply and Maybe Monad, just as the printed card
- * would. What it can no longer do is be two operations at once.
+ * A wildcard stands for ONE operation — that is the limit. Every slot it fills
+ * then behaves exactly like a real card and supports each combo needing it: an
+ * assigned `ap` feeds Apply, Applicative and Monad alike, as the printed card
+ * would. What it cannot do is be `chain` here and `traverse` there.
  */
 export type Coverage = ReadonlySet<string>;
 
@@ -53,19 +53,6 @@ function coverageScore(covered: Coverage): number {
   return total;
 }
 
-/**
- * Assigns the wildcards once, for the whole play area.
- *
- * Before this existed, each combo was judged with its own fresh pool, so one
- * `*.*` counted as Maybe.chain and Either.map and List.traverse simultaneously —
- * a single card completing structures in four containers at once. Wildcards are
- * what make a 15-card area dense enough to finish a ladder, so the fix is not to
- * remove them but to spend each one exactly once.
- *
- * The rule, whole: **the game puts each wildcard wherever it raises the score
- * the most.** Repeatedly take the combo whose completion gains the most points,
- * cheapest first when tied, then in printed order; stop when nothing gains.
- */
 /** Every slot a combo asks for, so a wildcard is never spent somewhere useless. */
 const slotsWorthFilling: ReadonlyArray<readonly [ContainerName, string]> = (() => {
   const seen = new Set<string>();
@@ -83,6 +70,24 @@ const slotsWorthFilling: ReadonlyArray<readonly [ContainerName, string]> = (() =
   return list;
 })();
 
+/**
+ * Assigns the wildcards once, for the whole play area.
+ *
+ * Each combo used to be judged with its own fresh pool, so a single `*.*`
+ * counted as Maybe.chain AND Either.map AND List.traverse at the same time —
+ * one card being several different operations. A wildcard now settles on ONE
+ * operation and stays there.
+ *
+ * Where it applies is decided by the blank on the card. `*.map` and `*.*` leave
+ * the container blank, so their operation lands in all four containers at once;
+ * `Maybe.*` has its container printed and serves Maybe alone. Four Functors off
+ * one `*.map` is a big turn, and that is the point — a card game nobody wants to
+ * play teaches nothing. The `*.*` already carries its own brake: a combo held up
+ * only by wildcards scores but cannot be claimed.
+ *
+ * Which operation each wildcard settles on is the game's choice, not the
+ * player's: **whatever arrangement scores the most.**
+ */
 export function allocateCoverage(cards: readonly Card[]): Coverage {
   const printed = new Set<string>();
   for (const card of cards) {
@@ -125,16 +130,24 @@ export function allocateCoverage(cards: readonly Card[]): Coverage {
     // Leaving a wildcard idle is a legal arrangement: nothing it can reach helps.
     search(index + 1, covered);
     for (const [container, operation] of open) {
-      const key = slot(container, operation);
-      if (covered.has(key) || !fits(card, container, operation)) continue;
-      const memo = `${index + 1}|${[...assigned, key].sort().join(',')}`;
+      if (!fits(card, container, operation)) continue;
+      // The blank on the card is what spreads. `*.map` and `*.*` leave the
+      // container blank, so once the operation is settled they supply it in
+      // every container at once — one card, four Functors. `Maybe.*` has its
+      // container printed, so it serves Maybe and nowhere else.
+      const filled = (card.container === '*'
+        ? containers.map((c) => slot(c, operation))
+        : [slot(container, operation)]
+      ).filter((key) => !covered.has(key));
+      if (filled.length === 0) continue;
+      const memo = `${index + 1}|${[...assigned, ...filled].sort().join(',')}`;
       if (seen.has(memo)) continue;
       seen.add(memo);
-      covered.add(key);
-      assigned.push(key);
+      for (const key of filled) covered.add(key);
+      assigned.push(...filled);
       search(index + 1, covered);
-      assigned.pop();
-      covered.delete(key);
+      for (let i = 0; i < filled.length; i += 1) assigned.pop();
+      for (const key of filled) covered.delete(key);
     }
   };
   search(0, new Set(printed));
