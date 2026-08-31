@@ -39,7 +39,10 @@ export function FinishedScreen({ state }: { readonly state: PublicState }) {
             <b>{score.name}</b>
             <span className="total">{score.total}점</span>
             <span className="muted">
-              조합 {score.comboScore} · Utility {score.utilityScore} · Claim {score.claimScore} · 비밀 목표 {score.goalScore}
+              {/* Every part of the total, so the line adds up to it. Leaving one
+                  out made the summary disagree with the number beside it. */}
+              조합 {score.comboScore} · 같은 연산 {score.instanceScore} · Utility {score.utilityScore}
+              {' · '}Claim {score.claimScore} · 비밀 목표 {score.goalScore}
             </span>
             <Working score={score} />
           </li>
@@ -99,6 +102,40 @@ function Working({ score }: { readonly score: FinalScore }) {
           {/* The rule that surprises people: a container pays for its best base
               tier only, so Functor stops paying the moment Apply is built. */}
           <p className="muted">컨테이너마다 기본 단계는 가장 높은 하나만 점수가 됩니다. 특수 조합은 따로 더해집니다.</p>
+        </dd>
+
+        <dt>같은 연산 {score.instanceScore}점</dt>
+        <dd>
+          {score.instances.length === 0 ? (
+            <p className="muted">
+              같은 연산을 두 컨테이너 이상에서 가진 것이 없습니다. `map`을 Maybe와 List 양쪽에서 가지면 2점입니다.
+            </p>
+          ) : (
+            <>
+              {/* Which containers, not just how many: the whole point is that
+                  `map` for Maybe and `map` for List are different cards for one
+                  interface, and a bare count would hide that. */}
+              <ul className="working-list">
+                {score.instances.map((row) => (
+                  <li key={row.operation}>
+                    <span className="working-claims">
+                      <span className="chip">{row.operation}</span>
+                      {row.held.map((container) => (
+                        <span key={container} className="chip">{container}</span>
+                      ))}
+                      <span className="muted">
+                        {row.held.length}/{row.possible.length}
+                      </span>
+                    </span>
+                    <b>{row.score}</b>
+                  </li>
+                ))}
+              </ul>
+              <p className="muted">
+                두 곳이면 2점, 세 곳이면 5점, 네 곳이면 9점입니다. 조커는 세지 않습니다.
+              </p>
+            </>
+          )}
         </dd>
 
         <dt>Utility {score.utilityScore}점</dt>

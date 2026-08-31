@@ -16,7 +16,7 @@ import { containerMeta, statusName } from '../theme/meta.ts';
 import { containerColor, palette, toHexNumber, utilityColor, wildcardColor } from '../theme/tokens.ts';
 import { containers, createDeck, utilities } from '../../../src/core/cards.ts';
 import { comboDefinitions, coveredOperations, scoringCombos } from '../../../src/core/combos.ts';
-import { scorePlayer } from '../../../src/core/scoring.ts';
+import { scorePlayer, scoreInstances } from '../../../src/core/scoring.ts';
 import { isNarrow } from '../ui/viewport.ts';
 import type { Card, ContainerName, PublicPlayer, PublicState, Reveal } from '../../../src/core/types.ts';
 
@@ -94,31 +94,47 @@ export interface TableCallbacks {
  * base ladder to Monad first, then that container's specials. Derived from the
  * deck rather than restated, so a card added to the rules gets a slot here.
  */
-const CONTAINER_SLOTS: Record<string, string[]> = (() => {
-  const ladder = ['map', 'ap', 'pure', 'chain'];
+/**
+ * Every operation in the deck, in one order, used by every container's row.
+ *
+ * The rows used to list only what their own container has, so `reduce` sat in a
+ * different place on every line and the grid could not be read downwards. It has
+ * to be readable downwards: holding one operation across containers is scored,
+ * and a player three deep in `map` cannot go for the fourth without seeing the
+ * column. Aligning it also shows, for the first time, what a container CANNOT
+ * do — Task's row simply runs out, because a Task hands its value to nobody.
+ *
+ * The ladder leads, then the branch that hangs off it, then the rest; anything
+ * the deck gains that is not named here lands at the end rather than vanishing.
+ */
+const SLOT_ORDER: string[] = (() => {
+  const preferred = ['map', 'ap', 'pure', 'chain', 'chainRec', 'alt', 'zero', 'filter', 'reduce', 'traverse', 'bimap'];
+  const inDeck = [...new Set(
+    createDeck()
+      .filter((card) => card.kind === 'container-function')
+      .map((card) => card.operation),
+  )];
+  return [
+    ...preferred.filter((operation) => inDeck.includes(operation)),
+    ...inDeck.filter((operation) => !preferred.includes(operation)).sort(),
+  ];
+})();
+
+/** Which operations each container's type actually has. */
+const CONTAINER_HAS: Record<string, ReadonlySet<string>> = (() => {
   const deck = createDeck();
-  const slots: Record<string, string[]> = {};
+  const has: Record<string, Set<string>> = {};
   for (const container of containers) {
-    const present = [...new Set(
+    has[container] = new Set(
       deck
         .filter((card) => card.kind === 'container-function' && card.container === container)
         .map((card) => card.operation),
-    )];
-    slots[container] = [
-      ...ladder.filter((operation) => present.includes(operation)),
-      ...present.filter((operation) => !ladder.includes(operation)).sort(),
-    ];
+    );
   }
-  return slots;
+  return has;
 })();
 
-/* A container's whole slot set goes on one line, so every play area is the
-   same shape and they can be compared down the column. Counted from the deck
-   rather than written down: giving List a `zero` card would otherwise wrap its
-   row and break the one-row-per-container rule the comparison rests on. */
-const SLOT_COUNT = Math.max(
-  ...containers.map((container) => CONTAINER_SLOTS[container]?.length ?? 0),
-);
+const SLOT_COUNT = SLOT_ORDER.length;
 
 /* What each region of a play area actually draws, rather than what it is
    handed. Sizing from the content is what keeps the two regions adjacent: a
@@ -137,10 +153,16 @@ const PLAY_AREA_MIN_WIDTH =
   + AREA_COLUMN_GAP
   + TYPECLASS_COLUMNS * TYPECLASS_MIN_WIDTH + (TYPECLASS_COLUMNS - 1) * SLOT_GAP;
 
-/** One cell of a container's row: an operation this player does or does not have. */
+/**
+ * One cell of a container's row.
+ *
+ * `absent` is not "you don't have it" — it is "this type cannot have it". Task
+ * has no `reduce` for anyone to draw. Drawing the gap is the point: it is where
+ * the deck stops being a list of cards and starts being about the types.
+ */
 interface SlotCell {
   readonly text: string;
-  readonly state: 'owned' | 'covered' | 'empty';
+  readonly state: 'owned' | 'covered' | 'empty' | 'absent';
   /** Held more than once. Worth a mark, not a word: a second copy of the same
    *  operation adds nothing to a combo. */
   readonly duplicate?: boolean;
@@ -1098,9 +1120,21 @@ export class TableScene {
         if (column === 0 && index > 0) y += SLOT_ROW;
         const x = contentLeft + column * (cellWidth + SLOT_GAP);
 
-        // Held, filled by a wildcard, or still missing.
+        // Held, filled by a wildcard, still missing, or impossible for this type.
         const owned = slot.state === 'owned';
         const covered = slot.state === 'covered';
+        const absent = slot.state === 'absent';
+
+        // A slot the type cannot have is drawn as a gap, not a cell: no border,
+        // no name, just enough ink to keep the column aligned underneath.
+        if (absent) {
+          const gap = new Graphics()
+            .roundRect(x + cellWidth / 2 - 4, y + 10, 8, 1, 0.5)
+            .fill({ color: EMPTY_SLOT, alpha: 0.3 });
+          this.areaLayer.addChild(gap);
+          return;
+        }
+
         // Asked for by the typeclass the player has selected. Marked cells fill
         // with their own row's colour and flip their text dark, so the mark
         // never has to borrow a hue that already means something else.
@@ -1136,7 +1170,8 @@ export class TableScene {
     };
 
     for (const container of containers) {
-      const slots = CONTAINER_SLOTS[container] ?? [];
+      const has = CONTAINER_HAS[container] ?? new Set<string>();
+      const slots = SLOT_ORDER.filter((operation) => has.has(operation));
       const counts = new Map<string, number>();
       for (const card of cards) {
         if (card.kind === 'container-function' && card.container === container) {
@@ -1156,7 +1191,8 @@ export class TableScene {
       gridRow(
         sigil,
         tint,
-        slots.map((operation) => {
+        SLOT_ORDER.map((operation) => {
+          if (!has.has(operation)) return { text: operation, state: 'absent' as const };
           const count = counts.get(operation) ?? 0;
           if (count > 0) return { text: operation, state: 'owned' as const, duplicate: count > 1 };
           return { text: operation, state: covered.has(operation) ? 'covered' as const : 'empty' as const };
@@ -1164,6 +1200,53 @@ export class TableScene {
         SLOT_COUNT,
         marked,
       );
+    }
+
+    /*
+     * What each column is worth, written under the column it belongs to.
+     *
+     * The rows are scored across, and the columns are scored down: one operation
+     * held in several containers pays 2, 5 and 9 as it fills, because `map` for
+     * Maybe and `map` for List are two cards for one interface. The columns were
+     * aligned for exactly this and then said nothing, so a player three deep in
+     * `map` had no way to know the fourth was worth six more than any other card
+     * on the market.
+     */
+    const standing = new Map(scoreInstances(cards).map((row) => [row.operation, row]));
+    if (standing.size > 0) {
+      const cellWidth = Math.max(
+        1,
+        Math.min(SLOT_MAX_WIDTH, Math.floor((available - (SLOT_COUNT - 1) * SLOT_GAP) / SLOT_COUNT)),
+      );
+
+      // Read downwards, so the row is marked with a downward arrow rather than
+      // a container's sigil. None of the operation glyphs is an arrow down.
+      const gutter = body('↓', 13, ACCENT);
+      gutter.position.set(left + 6, y + 5);
+      this.areaLayer.addChild(gutter);
+
+      SLOT_ORDER.forEach((operation, column) => {
+        const row = standing.get(operation);
+        if (!row) return;
+        const x = contentLeft + column * (cellWidth + SLOT_GAP);
+        const full = row.held.length === row.possible.length;
+
+        // A finished column is solid; a column on the way is outlined, filled
+        // in proportion to how far along it is. The eye should catch the ones
+        // one card from paying.
+        const share = row.held.length / row.possible.length;
+        const box = new Graphics()
+          .roundRect(x, y, cellWidth, 22, 3)
+          .fill({ color: ACCENT, alpha: full ? 1 : 0.1 + share * 0.2 })
+          .stroke({ width: full ? 1 : 1, color: ACCENT, alpha: full ? 1 : 0.7 });
+
+        const text = body(`${row.held.length}/${row.possible.length} · ${row.score}점`, 11, full ? INK : ACCENT);
+        const room = cellWidth - 8;
+        if (text.width > room) text.scale.set(Math.max(0.6, room / text.width));
+        text.position.set(x + Math.round((cellWidth - text.width * text.scale.x) / 2), y + 4);
+        this.areaLayer.addChild(box, text);
+      });
+      y += SLOT_ROW;
     }
 
     // Utilities score on how many different ones you hold, so the deck's twelve
