@@ -68,14 +68,14 @@ test('*.* takes the operation that pays most, not the one nearest to hand', () =
 
 test('utility scoring uses diversity only', () => {
   assert.deepEqual(scoreUtilities(utilityCards(['curry', 'uncurry'])), {
-    diversity: 2,
-    total: 2,
+    diversity: 5,
+    total: 5,
     count: 2,
   });
-  assert.equal(scoreUtilities(utilityCards(['curry', 'uncurry', 'flip'])).total, 5);
+  assert.equal(scoreUtilities(utilityCards(['curry', 'uncurry', 'flip'])).total, 9);
   assert.equal(
     scoreUtilities(utilityCards(['curry', 'uncurry', 'flip', 'compose', 'pipe', 'identity', 'tap'])).total,
-    21,
+    35,
   );
 });
 
@@ -83,9 +83,9 @@ test('the first utility is worth something on its own', () => {
   // It used to be worth nothing, so nobody ever took the first one — a line
   // that opens at zero is a line that never opens.
   assert.equal(scoreUtilities(utilityCards([])).total, 0);
-  assert.equal(scoreUtilities(utilityCards(['curry'])).total, 1);
+  assert.equal(scoreUtilities(utilityCards(['curry'])).total, 2);
   // And a duplicate still buys nothing: the score is on distinct kinds.
-  assert.equal(scoreUtilities(utilityCards(['curry', 'curry'])).total, 1);
+  assert.equal(scoreUtilities(utilityCards(['curry', 'curry'])).total, 2);
 });
 
 test('every extra utility kind is worth at least as much as the last', () => {

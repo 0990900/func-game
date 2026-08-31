@@ -13,26 +13,31 @@ export const utilityOperations = (cards: readonly Card[]): ReadonlySet<string> =
   new Set(cards.filter((card) => card.kind === 'utility').map((card) => card.operation));
 
 /**
- * Utility pays for variety, and the first one has to pay something.
+ * Utility pays for variety, and it has to pay enough to be worth a turn.
  *
- * The curve used to open at zero: a first `map` stood up a 2-point Functor on
- * the spot, while a first utility bought nothing at all and only promised to
- * matter later. Nobody opened a utility line — bots were watched declining
- * utilities from a market until the market held nothing else — and the cards
- * sat there, plentiful and worthless, because the market only turns over when
- * somebody trades. One point across the whole curve keeps the commitment (a
- * first utility is still worth half a Functor) and removes the refusal.
+ * Every kind after the first is worth one more than the last: 2, then +3, +4,
+ * +5, +6, +7. Committing is what pays, and the first card still opens level
+ * with a Functor so nobody has to lose a turn to get started.
+ *
+ * The old curve was flat and slight — 1, 2, 5, 8 — and it was written when a
+ * container card bought a 2-point Functor and nothing else. Since then the
+ * ladder branched into thirteen combos and holding one operation across
+ * containers began paying on top, so a container card came to be worth 4 or 5
+ * while a utility stayed at 1. Bots stopped taking them at all: the market ran
+ * with 2.7 of its 4 slots stuck on utilities nobody would trade for, and a
+ * quarter of all players finished having never held one. At this curve the
+ * market clears to 0.65 and the share of players holding three kinds or more
+ * goes from 18% to 33%.
  */
+const UTILITY_CURVE = [0, 2, 5, 9, 14, 20, 27] as const;
+
 export function scoreUtilities(cards: readonly Card[]): UtilityScore {
   const n = utilityOperations(cards).size;
-  let diversity = 0;
-  if (n === 1) diversity = 1;
-  else if (n === 2) diversity = 2;
-  else if (n === 3) diversity = 5;
-  else if (n === 4) diversity = 8;
-  else if (n === 5) diversity = 12;
-  else if (n === 6) diversity = 17;
-  else if (n >= 7) diversity = 17 + (n - 6) * 4;
+  const last = UTILITY_CURVE.length - 1;
+  // The kth kind is worth k + 1, which is what the table spells out; past the
+  // end of the table the same rule simply carries on.
+  let diversity = UTILITY_CURVE[Math.min(n, last)]!;
+  for (let k = last + 1; k <= n; k += 1) diversity += k + 1;
 
   return { diversity, total: diversity, count: n };
 }

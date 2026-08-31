@@ -61,7 +61,7 @@ test('every goal can be met', () => {
     specialist: ['map', 'ap', 'pure', 'chain', 'alt'].map((op) => real('List', op)),
     generalist: (['Maybe', 'Either', 'List', 'Task'] as const).map((c) => real(c, 'map')),
     purist: ['map', 'ap'].map((op) => real('Task', op)),
-    'utility-belt': ['curry', 'flip'].map(utility),
+    'utility-belt': ['curry', 'flip', 'compose'].map(utility),
     // Four kinds off the ladder: Alt, Plus, Filterable, Foldable.
     polyglot: ['map', 'alt', 'zero', 'filter', 'reduce'].map((op) => real('Maybe', op)),
     collector: ['map', 'ap', 'pure', 'chain', 'alt', 'zero', 'filter', 'reduce'].map((op) => real('Maybe', op))

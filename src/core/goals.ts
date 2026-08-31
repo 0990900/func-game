@@ -87,10 +87,10 @@ const specs: readonly GoalSpec[] = [
   {
     id: 'utility-belt',
     name: 'Utility Belt',
-    text: 'Utility 2종 이상 수집',
+    text: 'Utility 3종 이상 수집',
     score: 6,
-    steps: 2,
-    done: ({ playArea }) => Math.min(2, scoreUtilities(playArea).count),
+    steps: 3,
+    done: ({ playArea }) => Math.min(3, scoreUtilities(playArea).count),
   },
   {
     id: 'polyglot',
