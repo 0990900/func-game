@@ -8,7 +8,7 @@
  * Behavior is preserved deliberately, including known defects. Do not "fix"
  * rules here; corrections belong in a separate, tested change.
  */
-import { createDeck } from './cards.ts';
+import { createDeck, utilities } from './cards.ts';
 import { groupScore, scorePlayer } from './scoring.ts';
 import { claimableCombos, comboKey, findCombos, isClaimable } from './combos.ts';
 import { goalCheck, goals, judge } from './goals.ts';
@@ -298,14 +298,116 @@ export function playBotTurn(deps: RuleDeps, room: Room, playerId: string): void 
   advanceTurn(deps, room);
 }
 
+/** What the cards alone are worth, claims aside. */
+const cardsWorth = (playArea: readonly Card[]): number =>
+  scorePlayer({ playArea: [...playArea], claimGroups: [] }).total;
+
+/**
+ * The cards that would continue the line this one starts.
+ *
+ * A utility is on the utility line, and the only thing that matters about the
+ * next one is that it is a kind not yet held. A container card is on its own
+ * container's line, and what continues it is an operation of that container
+ * still missing.
+ */
+function sameLine(playArea: readonly Card[], card: Card): Card[] {
+  if (card.kind === 'utility') {
+    const held = new Set(playArea.filter((c) => c.kind === 'utility').map((c) => c.operation));
+    held.add(card.operation);
+    return utilities
+      .filter((operation) => !held.has(operation))
+      .map((operation) => ({ id: `u:${operation}`, kind: 'utility', container: null, operation, label: operation }));
+  }
+  if (card.kind !== 'container-function') return [];
+
+  const container = card.container;
+  const held = new Set(
+    playArea
+      .filter((c) => c.kind === 'container-function' && c.container === container)
+      .map((c) => c.operation),
+  );
+  held.add(card.operation);
+  return CONTAINER_OPERATIONS[container as string]
+    ?.filter((operation) => !held.has(operation))
+    .map((operation) => ({
+      id: `c:${container}.${operation}`,
+      kind: 'container-function',
+      container,
+      operation,
+      label: `${container}.${operation}`,
+    })) ?? [];
+}
+
+/** Which operations each container has, read off the deck. */
+const CONTAINER_OPERATIONS: Record<string, string[]> = (() => {
+  const table: Record<string, string[]> = {};
+  for (const card of createDeck()) {
+    if (card.kind !== 'container-function' || !card.container) continue;
+    const list = (table[card.container] ??= []);
+    if (!list.includes(card.operation)) list.push(card.operation);
+  }
+  return table;
+})();
+
+/** How far ahead a bot looks along a line before it stops caring. */
+const LOOKAHEAD = 3;
+/**
+ * How much a point next turn is worth against a point now.
+ *
+ * Under one, because today's point is certain and tomorrow's depends on drawing
+ * the card that pays it.
+ */
+const DISCOUNT = 0.6;
+
+/**
+ * How much a bot wants a card.
+ *
+ * Measured against the scoring rules rather than guessed at, and along the line
+ * the card is on rather than only what it pays today. The utility pile is why:
+ * the first one scores nothing and the second scores one, so a bot valuing only
+ * the card in front of it would never begin a collection that goes on to pay
+ * more per card than any container — three kinds onward it is +3 to +5 a card,
+ * against a container ladder's +2 to +3, and it has no ceiling.
+ *
+ * The estimate this replaced valued a utility as `5 + how many utility cards
+ * you hold`, counting cards instead of kinds, so a second copy of one it
+ * already had looked as good as a kind it was missing.
+ */
 function botValue(deps: RuleDeps, card: Card, player: Player): number {
+  // A joker fits wherever it is eventually needed, which no marginal score can
+  // express.
   if (card.kind === 'wildcard') return 100;
   if (card.kind.includes('wildcard')) return 25;
-  if (card.kind === 'utility') return 5 + player.playArea.filter((c) => c.kind === 'utility').length * 2;
-  const sameContainer = player.playArea.filter((c) => c.container === card.container).length;
-  const duplicate = player.playArea.some((c) => c.container === card.container && c.operation === card.operation);
-  const rare = ['chain', 'traverse', 'bimap', 'zero'].includes(card.operation) ? 3 : 0;
-  return sameContainer * 3 + (duplicate ? -2 : 4) + rare + deps.random();
+
+  const before = cardsWorth(player.playArea);
+  let playArea: Card[] = [...player.playArea, card];
+  let value = cardsWorth(playArea) - before;
+
+  // Walk the line greedily, discounting each step. Three is enough: a player
+  // places fifteen cards and no line is worth following further than that.
+  let weight = DISCOUNT;
+  for (let step = 0; step < LOOKAHEAD; step += 1) {
+    const options = sameLine(playArea, card);
+    if (options.length === 0) break;
+
+    const current = cardsWorth(playArea);
+    let bestGain = -Infinity;
+    let bestCard: Card | null = null;
+    for (const option of options) {
+      const gain = cardsWorth([...playArea, option]) - current;
+      if (gain > bestGain) {
+        bestGain = gain;
+        bestCard = option;
+      }
+    }
+    if (!bestCard || bestGain <= 0) break;
+
+    value += bestGain * weight;
+    playArea = [...playArea, bestCard];
+    weight *= DISCOUNT;
+  }
+
+  return value + deps.random();
 }
 
 function resolveTurn(deps: RuleDeps, room: Room, player: Player, selected: Card, marketCard: Card | null = null): void {
