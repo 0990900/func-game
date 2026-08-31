@@ -28,46 +28,43 @@ const universal: Card = { id: 'w', kind: 'wildcard', container: '*', operation: 
 const goalById = (id: string) => goals.find((goal) => goal.id === id)!;
 
 test('a joker is not an operation', () => {
-  const six = ['map', 'ap', 'pure', 'chain', 'alt', 'zero'].map((op) => real('Maybe', op));
+  const eight = ['map', 'ap', 'pure', 'chain', 'alt', 'zero', 'filter', 'reduce']
+    .map((op) => real('Maybe', op));
   const collector = goalById('collector');
 
-  assert.equal(goalScore({ playArea: six, goal: collector }), 0, '여섯 종류로는 아직입니다');
+  assert.equal(goalScore({ playArea: eight, goal: collector }), 0, '여덟 종류로는 아직입니다');
   assert.equal(
-    goalScore({ playArea: [...six, universal], goal: collector }),
+    goalScore({ playArea: [...eight, universal], goal: collector }),
     0,
-    '조커는 어떤 연산도 대신할 수 있을 뿐, 일곱 번째 연산이 아닙니다',
+    '조커는 어떤 연산도 대신할 수 있을 뿐, 아홉 번째 연산이 아닙니다',
   );
   assert.equal(
-    goalScore({ playArea: [...six, real('Either', 'bimap')], goal: collector }),
+    goalScore({ playArea: [...eight, real('Either', 'bimap')], goal: collector }),
     collector.score,
-    '진짜 일곱 번째 연산이면 달성됩니다',
+    '진짜 아홉 번째 연산이면 달성됩니다',
   );
 });
 
-test('goals that ask for real cards do not accept jokers', () => {
+test('Purist asks for printed cards and jokers do not answer', () => {
   const jokers = Array.from({ length: 4 }, (_, i) => ({ ...universal, id: `w${i}` }));
-  for (const id of ['purist', 'polyglot']) {
-    assert.equal(goalScore({ playArea: jokers, goal: goalById(id) }), 0, `${id}: 조커로는 안 됩니다`);
-  }
+  assert.equal(goalScore({ playArea: jokers, goal: goalById('purist') }), 0, '조커로는 안 됩니다');
 
-  const monad = ['map', 'ap', 'pure', 'chain'].map((op) => real('List', op));
-  assert.equal(goalScore({ playArea: monad, goal: goalById('purist') }), goalById('purist').score);
-  assert.equal(
-    goalScore({ playArea: (['Maybe', 'Either', 'List', 'Task'] as const).map((c) => real(c, 'map')), goal: goalById('polyglot') }),
-    goalById('polyglot').score,
-  );
+  const printed = ['map', 'ap'].map((op) => real('List', op));
+  assert.equal(goalScore({ playArea: printed, goal: goalById('purist') }), goalById('purist').score);
 });
 
 test('every goal can be met', () => {
   // A goal that cannot be reached is a goal that quietly pays nothing, which is
   // exactly what the id chain used to do to a goal it had never heard of.
   const reachable: Record<string, readonly Card[]> = {
-    specialist: [real('Maybe', 'map'), real('Maybe', 'ap')],
-    generalist: [real('Maybe', 'map'), real('Either', 'map'), real('List', 'map')],
-    purist: ['map', 'ap', 'pure', 'chain'].map((op) => real('Task', op)),
-    'utility-belt': ['curry', 'flip', 'compose', 'pipe', 'identity'].map(utility),
-    polyglot: (['Maybe', 'Either', 'List', 'Task'] as const).map((c) => real(c, 'map')),
-    collector: ['map', 'ap', 'pure', 'chain', 'alt', 'zero'].map((op) => real('Maybe', op))
+    // Six combos in one container: Functor, Apply, Applicative, Chain, Monad, Alt.
+    specialist: ['map', 'ap', 'pure', 'chain', 'alt'].map((op) => real('List', op)),
+    generalist: (['Maybe', 'Either', 'List', 'Task'] as const).map((c) => real(c, 'map')),
+    purist: ['map', 'ap'].map((op) => real('Task', op)),
+    'utility-belt': ['curry', 'flip'].map(utility),
+    // Four kinds off the ladder: Alt, Plus, Filterable, Foldable.
+    polyglot: ['map', 'alt', 'zero', 'filter', 'reduce'].map((op) => real('Maybe', op)),
+    collector: ['map', 'ap', 'pure', 'chain', 'alt', 'zero', 'filter', 'reduce'].map((op) => real('Maybe', op))
       .concat(real('Either', 'bimap')),
   };
 

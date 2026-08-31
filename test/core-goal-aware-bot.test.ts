@@ -58,12 +58,12 @@ test('finishing every step is exactly what meeting the goal means', () => {
 test('a step toward the goal is worth something, a card beside it is not', () => {
   const player = {
     id: 'seat-1',
-    goal: goalNamed('polyglot'),
+    goal: goalNamed('generalist'),
     playArea: [real('Maybe', 'map'), real('Either', 'map'), real('List', 'map')],
   };
-  // The fourth container's map is the last step Polyglot is waiting for.
+  // Generalist wants a combo in all four containers, and Task has none yet.
   assert.ok(goalWorth(real('Task', 'map'), player) > 0, '목표를 진행시키는 카드가 0점입니다');
-  // Maybe.ap is a fine card and does nothing at all for this goal.
+  // Another Maybe card adds no container, so it does nothing for this goal.
   assert.equal(goalWorth(real('Maybe', 'ap'), player), 0);
 });
 
@@ -72,20 +72,21 @@ test('a goal out of reach pulls nothing', () => {
   // cost the bot the points it could still score.
   const player = {
     id: 'seat-1',
-    goal: goalNamed('polyglot'),
+    goal: goalNamed('generalist'),
     playArea: [
       real('Maybe', 'map'),
       ...Array.from({ length: CARDS_PER_PLAYER - 2 }, (_, i) => real('Maybe', ['ap', 'pure', 'chain'][i % 3]!)),
     ],
   };
   assert.equal(player.playArea.length, CARDS_PER_PLAYER - 1, '마지막 한 장을 남긴 상태여야 합니다');
+  // One turn left, three containers still empty: it cannot be finished.
   assert.equal(goalWorth(real('Either', 'map'), player), 0, '닿을 수 없는 목표가 값을 가졌습니다');
 });
 
 test('two seats holding the same goal do not play it identically', () => {
   const playArea = [real('Maybe', 'map'), real('Either', 'map'), real('List', 'map')];
   const card = real('Task', 'map');
-  const worth = (id: string): number => goalWorth(card, { id, goal: goalNamed('polyglot'), playArea });
+  const worth = (id: string): number => goalWorth(card, { id, goal: goalNamed('generalist'), playArea });
   const seats = ['player-1', 'player-2', 'player-3', 'player-4'].map(worth);
   assert.equal(new Set(seats).size > 1, true, '모든 자리가 목표를 똑같은 무게로 봅니다');
   for (const value of seats) assert.ok(value > 0, '어떤 자리는 목표를 아예 무시합니다');

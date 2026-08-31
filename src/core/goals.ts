@@ -56,57 +56,59 @@ const specs: readonly GoalSpec[] = [
   {
     id: 'specialist',
     name: 'Specialist',
-    text: '한 컨테이너에서 서로 다른 조합 2개 이상 완성',
+    text: '한 컨테이너에서 서로 다른 조합 6개 이상 완성',
     score: 7,
-    steps: 2,
+    steps: 6,
     done: ({ combos }) => {
       const perContainer = new Map<string, number>();
       for (const combo of combos) {
         perContainer.set(combo.container, (perContainer.get(combo.container) ?? 0) + 1);
       }
-      return Math.min(2, Math.max(0, ...perContainer.values()));
+      return Math.min(6, Math.max(0, ...perContainer.values()));
     },
   },
   {
     id: 'generalist',
     name: 'Generalist',
-    text: '서로 다른 컨테이너 3개 이상에서 조합 완성',
+    text: '네 컨테이너 모두에서 조합 완성',
     score: 6,
-    steps: 3,
-    done: ({ combos }) => Math.min(3, new Set(combos.map((combo) => combo.container)).size),
+    steps: 4,
+    done: ({ combos }) => new Set(combos.map((combo) => combo.container)).size,
   },
   {
     id: 'purist',
     name: 'Purist',
-    text: '조커 없이 Monad 완성',
+    text: '조커 없이 map과 ap를 같은 컨테이너에서 확보',
     score: 6,
-    steps: 4,
+    steps: 2,
     done: ({ holds }) => Math.max(...containers.map((container) =>
-      (['map', 'ap', 'pure', 'chain'] as const).filter((operation) => holds(container, operation)).length)),
+      (['map', 'ap'] as const).filter((operation) => holds(container, operation)).length)),
   },
   {
     id: 'utility-belt',
     name: 'Utility Belt',
-    text: 'Utility 5종 이상 수집',
+    text: 'Utility 2종 이상 수집',
     score: 6,
-    steps: 5,
-    done: ({ playArea }) => Math.min(5, scoreUtilities(playArea).count),
+    steps: 2,
+    done: ({ playArea }) => Math.min(2, scoreUtilities(playArea).count),
   },
   {
     id: 'polyglot',
     name: 'Polyglot',
-    text: 'Maybe/Either/List/Task의 map을 모두 확보',
+    text: '사다리 밖 조합을 4종류 이상 완성',
     score: 7,
     steps: 4,
-    done: ({ holds }) => containers.filter((container) => holds(container, 'map')).length,
+    done: ({ combos }) => Math.min(4, new Set(
+      combos.filter((combo) => combo.family === 'special').map((combo) => combo.name),
+    ).size),
   },
   {
     id: 'collector',
     name: 'Collector',
-    text: '서로 다른 연산 이름 7종 이상 확보',
+    text: '서로 다른 연산 이름 9종 이상 확보',
     score: 7,
-    steps: 7,
-    done: ({ operations }) => Math.min(7, operations.size),
+    steps: 9,
+    done: ({ operations }) => Math.min(9, operations.size),
   },
 ];
 
