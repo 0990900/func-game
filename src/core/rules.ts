@@ -360,6 +360,48 @@ const LOOKAHEAD = 3;
 const DISCOUNT = 0.6;
 
 /**
+ * How hard a bot leans on its secret goal, fixed for the whole game.
+ *
+ * Taken from the seat rather than drawn fresh at every comparison, so two bots
+ * holding the same goal still play it differently, and replaying a game replays
+ * the same decisions.
+ */
+function commitment(playerId: string): number {
+  let hash = 7;
+  for (let i = 0; i < playerId.length; i += 1) hash = (hash * 31 + playerId.charCodeAt(i)) % 997;
+  return 0.7 + (hash / 997) * 0.3;
+}
+
+/**
+ * What a card is worth toward the goal in the bot's hand, on top of its points.
+ *
+ * Bots used to ignore their goal completely — the valuation never mentioned it —
+ * so choosing between two goals decided nothing and a goal was met only by
+ * accident. Measured that way, Specialist came up 96% of the time and Polyglot
+ * 0%, which said nothing about the goals and everything about nobody playing
+ * toward them.
+ *
+ * Paid per step rather than on completion, or the bot stays blind until the
+ * last card and never gathers toward anything.
+ */
+export function goalWorth(card: Card, player: Pick<Player, 'id' | 'goal' | 'playArea'>): number {
+  if (!player.goal) return 0;
+  const definition = judge(player.goal.id);
+  if (!definition) throw ruleError(`판정할 수 없는 목표입니다: ${player.goal.id}`);
+
+  const before = definition.done(goalCheck(player.playArea));
+  const after = definition.done(goalCheck([...player.playArea, card]));
+  if (after <= before) return 0;
+
+  // A goal needing more cards than there are turns left is worth nothing, and
+  // must not pull a single pick away from ordinary scoring.
+  const turnsLeft = CARDS_PER_PLAYER - player.playArea.length - 1;
+  if (definition.steps - after > turnsLeft) return 0;
+
+  return definition.score * ((after - before) / definition.steps) * commitment(player.id);
+}
+
+/**
  * How much a bot wants a card.
  *
  * Measured against the scoring rules rather than guessed at, and along the line
@@ -407,7 +449,7 @@ function botValue(deps: RuleDeps, card: Card, player: Player): number {
     weight *= DISCOUNT;
   }
 
-  return value + deps.random();
+  return value + goalWorth(card, player) + deps.random();
 }
 
 function resolveTurn(deps: RuleDeps, room: Room, player: Player, selected: Card, marketCard: Card | null = null): void {

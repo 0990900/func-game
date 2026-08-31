@@ -27,7 +27,20 @@ export interface GoalCheck {
   readonly operations: ReadonlySet<string>;
 }
 
-export interface GoalDefinition extends Goal {
+/**
+ * A goal, with the one thing it needs to judge itself: how far along you are.
+ *
+ * Everything is counted in steps. `met` is not written per goal — it is `done`
+ * reaching `steps`, once, below — so the two can never drift apart. A bot that
+ * only saw a yes/no would be blind until the final card and would never gather
+ * toward a goal it could still reach.
+ */
+interface GoalSpec extends Goal {
+  readonly steps: number;
+  readonly done: (check: GoalCheck) => number;
+}
+
+export interface GoalDefinition extends GoalSpec {
   readonly met: (check: GoalCheck) => boolean;
 }
 
@@ -39,18 +52,19 @@ export interface GoalDefinition extends Goal {
  * to be plain data. `goalCards` is the data half, and `judge` finds the
  * definition again by id.
  */
-const definitions: readonly GoalDefinition[] = [
+const specs: readonly GoalSpec[] = [
   {
     id: 'specialist',
     name: 'Specialist',
     text: '한 컨테이너에서 서로 다른 조합 2개 이상 완성',
     score: 7,
-    met: ({ combos }) => {
+    steps: 2,
+    done: ({ combos }) => {
       const perContainer = new Map<string, number>();
       for (const combo of combos) {
         perContainer.set(combo.container, (perContainer.get(combo.container) ?? 0) + 1);
       }
-      return [...perContainer.values()].some((count) => count >= 2);
+      return Math.min(2, Math.max(0, ...perContainer.values()));
     },
   },
   {
@@ -58,39 +72,49 @@ const definitions: readonly GoalDefinition[] = [
     name: 'Generalist',
     text: '서로 다른 컨테이너 3개 이상에서 조합 완성',
     score: 6,
-    met: ({ combos }) => new Set(combos.map((combo) => combo.container)).size >= 3,
+    steps: 3,
+    done: ({ combos }) => Math.min(3, new Set(combos.map((combo) => combo.container)).size),
   },
   {
     id: 'purist',
     name: 'Purist',
     text: '조커 없이 Monad 완성',
     score: 6,
-    met: ({ holds }) =>
-      containers.some((container) =>
-        (['map', 'ap', 'pure', 'chain'] as const).every((operation) => holds(container, operation))),
+    steps: 4,
+    done: ({ holds }) => Math.max(...containers.map((container) =>
+      (['map', 'ap', 'pure', 'chain'] as const).filter((operation) => holds(container, operation)).length)),
   },
   {
     id: 'utility-belt',
     name: 'Utility Belt',
     text: 'Utility 5종 이상 수집',
     score: 6,
-    met: ({ playArea }) => scoreUtilities(playArea).count >= 5,
+    steps: 5,
+    done: ({ playArea }) => Math.min(5, scoreUtilities(playArea).count),
   },
   {
     id: 'polyglot',
     name: 'Polyglot',
     text: 'Maybe/Either/List/Task의 map을 모두 확보',
     score: 7,
-    met: ({ holds }) => containers.every((container) => holds(container, 'map')),
+    steps: 4,
+    done: ({ holds }) => containers.filter((container) => holds(container, 'map')).length,
   },
   {
     id: 'collector',
     name: 'Collector',
     text: '서로 다른 연산 이름 7종 이상 확보',
     score: 7,
-    met: ({ operations }) => operations.size >= 7,
+    steps: 7,
+    done: ({ operations }) => Math.min(7, operations.size),
   },
 ];
+
+/** Met is the same sentence for every goal: every step is done. */
+const definitions: readonly GoalDefinition[] = specs.map((spec) => ({
+  ...spec,
+  met: (check) => spec.done(check) >= spec.steps,
+}));
 
 /** What a player is dealt and stores: no functions, so the room stays cloneable. */
 export const goals: readonly Goal[] = definitions.map(
