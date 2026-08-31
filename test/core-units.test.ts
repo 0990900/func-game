@@ -41,13 +41,36 @@ test('*.* fills any missing slot', () => {
 
 test('utility scoring uses diversity only', () => {
   assert.deepEqual(scoreUtilities(utilityCards(['curry', 'uncurry'])), {
-    diversity: 1,
-    total: 1,
+    diversity: 2,
+    total: 2,
     count: 2,
   });
-  assert.equal(scoreUtilities(utilityCards(['curry', 'uncurry', 'flip'])).total, 4);
+  assert.equal(scoreUtilities(utilityCards(['curry', 'uncurry', 'flip'])).total, 5);
   assert.equal(
     scoreUtilities(utilityCards(['curry', 'uncurry', 'flip', 'compose', 'pipe', 'identity', 'tap'])).total,
-    20,
+    21,
   );
+});
+
+test('the first utility is worth something on its own', () => {
+  // It used to be worth nothing, so nobody ever took the first one — a line
+  // that opens at zero is a line that never opens.
+  assert.equal(scoreUtilities(utilityCards([])).total, 0);
+  assert.equal(scoreUtilities(utilityCards(['curry'])).total, 1);
+  // And a duplicate still buys nothing: the score is on distinct kinds.
+  assert.equal(scoreUtilities(utilityCards(['curry', 'curry'])).total, 1);
+});
+
+test('every extra utility kind is worth at least as much as the last', () => {
+  const kinds = ['curry', 'uncurry', 'flip', 'compose', 'pipe', 'identity', 'tap', 'partial', 'constant'];
+  let previous = 0;
+  let gain = 0;
+  for (let n = 1; n <= kinds.length; n += 1) {
+    const total = scoreUtilities(utilityCards(kinds.slice(0, n))).total;
+    const step = total - previous;
+    assert.ok(step > 0, `the ${n}번째 종류가 0점입니다`);
+    if (n > 1) assert.ok(step >= gain || n > 6, `${n}종에서 증가폭이 꺾였습니다: ${gain} -> ${step}`);
+    gain = step;
+    previous = total;
+  }
 });
