@@ -41,5 +41,11 @@ export function createDeck(): Card[] {
     add({ kind: 'utility', container: null, operation, label: operation });
   }
 
+  // One card that is never played: whoever draws it sets it aside and the order
+  // of play turns around. Everything that handles it — the draw, the flip, the
+  // event, the sound — was written and tested against a card injected by hand,
+  // and nobody noticed the deck had never contained one.
+  add({ kind: 'order-reverse', container: null, operation: 'reverse', label: '순서 바꾸기' });
+
   return cards;
 }

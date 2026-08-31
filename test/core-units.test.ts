@@ -13,7 +13,7 @@ const utilityCards = (operations: readonly string[]): Card[] =>
 
 test('deck contains exactly one *.*', () => {
   const deck = createDeck();
-  assert.equal(deck.length, 66);
+  assert.equal(deck.length, 67);
   assert.equal(deck.filter((card) => card.label === '*.*').length, 1);
 });
 

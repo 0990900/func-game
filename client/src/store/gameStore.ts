@@ -127,6 +127,10 @@ function announce(previous: PublicState | null, next: PublicState): void {
   const drew = next.drawn && next.drawn.id !== previous?.drawn?.id;
   if (drew && next.me?.isMyTurn && previous?.me?.isMyTurn) sound.play('draw');
 
+  // The order of play turning around is the one thing in a draft that changes
+  // the shape of the game rather than a score, and it happened in silence.
+  if (previous && next.direction !== previous.direction) sound.play('reverse');
+
   if (next.phase === 'finished' && previous?.phase !== 'finished') {
     sound.play('finish');
     return;

@@ -16,6 +16,17 @@
     상대 소리는 220ms 안에 두 번 울리지 않게 막습니다.
   - `card-shove-1..2.ogg` — 뽑은 카드를 시장으로 밀어 넣고 교환할 때.
 
+카드가 아닌 순간에는 같은 작가의 UI 팩(전부 CC0)을 씁니다.
+
+- [Interface Sounds](https://kenney.nl/assets/interface-sounds) ·
+  [UI Audio](https://kenney.nl/assets/ui-audio) ·
+  [Digital Audio](https://kenney.nl/assets/digital-audio)
+  - `dg_powerUp10.m4a` — 순서 바꾸기 카드로 진행 방향이 뒤집힐 때.
+
+**UI 사운드는 자르지 않습니다.** 카드 녹음은 마이크가 방에서 잡은 폴리라 앞뒤에 룸톤이 붙지만,
+UI·전자음은 설계된 큐라 시작할 때 시작하고 끝낼 때 끝납니다. 260ms로 자르면 상승 3음이 첫 음만
+남습니다. 파일 이름의 `dg_`/`if_`/`ui_` 접두사로 구분합니다.
+
 파일은 받은 그대로 두고, 재생할 때 **카드 소리가 나는 구간만** 잘라 씁니다. 원본은 450~880ms인데
 실제 카드 소리는 그중 260ms 남짓이고 앞뒤는 룸톤입니다. 앞의 무음은 최대 383ms까지 있어 클릭과
 소리 사이가 벌어졌고, 뒤의 꼬리는 히스로 들렸습니다 — `card-shove`가 특히 심했습니다.

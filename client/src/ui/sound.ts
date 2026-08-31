@@ -37,6 +37,8 @@ export type Cue =
   | 'claim'
   /** The turn clock is nearly out. */
   | 'hurry'
+  /** A reverse card flipped the order of play. */
+  | 'reverse'
   /** The game is over. */
   | 'finish';
 
@@ -73,7 +75,18 @@ const SAMPLES: Partial<Record<Cue, readonly string[]>> = {
   // The same recordings: a card landing is a card landing, whoever laid it.
   opponent: ['card-place-1', 'card-place-2', 'card-place-3', 'card-place-4'],
   swap: ['card-shove-1', 'card-shove-2'],
+  reverse: ['dg_powerUp10'],
 };
+
+/**
+ * Whether a recording needs trimming at all.
+ *
+ * The card files are foley: a microphone in a room, with the room audible
+ * before and after the card. The interface and digital packs are designed cues
+ * — they start when they start and end when they mean to, and cutting one at a
+ * quarter-second turns a rising run into its first note.
+ */
+const isFoley = (name: string): boolean => !/^(dg|if|ui)_/.test(name);
 
 /**
  * The soonest another player's card may be heard after the last one.
@@ -194,7 +207,7 @@ async function preload(ctx: AudioContext): Promise<void> {
     try {
       const response = await fetch(`${import.meta.env.BASE_URL}sounds/${name}.m4a`);
       if (!response.ok) return;
-      clips.set(name, trim(await ctx.decodeAudioData(await response.arrayBuffer())));
+      clips.set(name, trim(name, await ctx.decodeAudioData(await response.arrayBuffer())));
     } catch {
       // The synthesised fallback covers a file that will not decode, rather
       // than the cue going missing.
@@ -203,7 +216,9 @@ async function preload(ctx: AudioContext): Promise<void> {
 }
 
 /** Finds where the card starts and how much of the file to keep. */
-function trim(buffer: AudioBuffer): Clip {
+function trim(name: string, buffer: AudioBuffer): Clip {
+  if (!isFoley(name)) return { buffer, offset: 0, seconds: buffer.duration };
+
   const data = buffer.getChannelData(0);
   let peak = 0;
   for (let i = 0; i < data.length; i += 1) peak = Math.max(peak, Math.abs(data[i]!));
@@ -337,6 +352,12 @@ function notesFor(cue: Cue, count: number): Note[] {
       ];
     case 'claim':
       return claimRun(count);
+    case 'reverse':
+      // Only reached if the recording will not decode.
+      return [
+        { hz: semitone(-5), at: 0, seconds: 0.1, gain: 0.05, type: 'triangle' },
+        { hz: semitone(7), at: 0.08, seconds: 0.18, gain: 0.05, type: 'triangle' },
+      ];
     case 'hurry':
       // One dull tick a second. Deliberately unmusical: it should nag.
       return [{ hz: semitone(-12), at: 0, seconds: 0.05, gain: 0.045, type: 'square' }];

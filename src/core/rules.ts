@@ -325,7 +325,11 @@ function advanceTurn(deps: RuleDeps, room: Room): void {
   const played = room.players.reduce((sum, player) => sum + player.playArea.length, 0);
   recordScores(room, played);
 
-  if (played >= room.players.length * CARDS_PER_PLAYER || (!room.deck.length && !room.drawn)) {
+  // Everyone plays the same number of cards, which reversing the order would
+  // otherwise break: a flip gives one seat an extra turn and takes one from
+  // another, so the count alone is not the finish line.
+  const everyoneDone = room.players.every((player) => player.playArea.length >= CARDS_PER_PLAYER);
+  if (everyoneDone || (!room.deck.length && !room.drawn)) {
     room.phase = 'finished';
     room.currentPlayerIndex = 0;
     room.drawn = null;
@@ -345,10 +349,14 @@ function advanceTurn(deps: RuleDeps, room: Room): void {
     addEvent(deps, room, 'reverse', `진행 순서가 ${directionName(room.direction)} 방향으로 바뀝니다.`);
   }
 
+  // Step past anyone who has already played their fifteen. Without a reverse
+  // card this never happens; with one it is what keeps the hands equal.
   const n = room.players.length;
-  room.currentPlayerIndex = room.direction === 'left'
-    ? (room.currentPlayerIndex + 1) % n
-    : (room.currentPlayerIndex - 1 + n) % n;
+  const step = room.direction === 'left' ? 1 : n - 1;
+  for (let i = 0; i < n; i += 1) {
+    room.currentPlayerIndex = (room.currentPlayerIndex + step) % n;
+    if (room.players[room.currentPlayerIndex]!.playArea.length < CARDS_PER_PLAYER) return;
+  }
 }
 
 /**

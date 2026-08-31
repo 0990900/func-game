@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { createDeck } from '../src/core/cards.ts';
 import { Command } from '../src/core/commands.ts';
 import { publicState } from '../src/core/public-state.ts';
 import { createTable } from '../src/core/testing.ts';
@@ -188,4 +189,28 @@ test('who may not be removed, and when', () => {
     'a running draft has fixed seats and a turn pointing at one of them',
   );
   assert.equal(table.room.players.length, 4, 'a refused kick changes nothing');
+});
+
+test('the deck actually contains the card that reverses the order', () => {
+  // The reverse card had a kind, a draw rule, a flip, an event and a sound, and
+  // `createDeck` never made one. The test that covered it pushed the card onto
+  // the deck itself, so it proved the handling worked and never asked whether
+  // the card existed.
+  const reverses = createDeck().filter((card) => card.kind === 'order-reverse');
+  assert.equal(reverses.length, 1, 'exactly one, or the order flips too often');
+});
+
+test('a whole game turns the order around', () => {
+  // End to end, through the shuffle, rather than with a card placed by hand:
+  // that is the part that was broken.
+  const flipped = Array.from({ length: 8 }, (_, seed) => {
+    const table = fourPlayerDraft(seed + 1);
+    const started = table.room.direction;
+    while (table.room.phase === 'draft') playTurn(table);
+    return table.room.direction !== started;
+  });
+
+  // One card in sixty-seven, and the game ends after sixty draws, so it is not
+  // certain in any single game — but it cannot be nothing across eight.
+  assert.ok(flipped.some(Boolean), '순서 바꾸기 카드가 한 판도 나오지 않았습니다');
 });
