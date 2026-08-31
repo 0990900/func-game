@@ -1,15 +1,63 @@
 import { containers } from './cards.ts';
 import type { Card, Combo, ComboDefinition, ContainerName } from './types.ts';
 
+/**
+ * What can be built, and where. Each combo asks for exactly what the typeclass
+ * it names asks for — nothing added to make the game harder.
+ *
+ * The ladder is not a straight line. `Applicative` (map, ap, pure) and `Chain`
+ * (map, ap, chain) are siblings off `Apply`, and `Monad` is where they meet —
+ * which is what the spec means by calling Monad a composition of Applicative
+ * and Chain. Holding both siblings IS holding a Monad, so nothing is ambiguous
+ * about which rung a container has reached.
+ *
+ * `Alt` and `Plus` are the second branch, and `Alternative` is its confluence
+ * with `Applicative`. Only Maybe and List reach `Plus`: `zero` needs a way to
+ * mean "nothing here", and Either always owes an error while Task would have to
+ * never settle.
+ *
+ * `Filterable`, `Foldable` and `Bifunctor` hang off no rung at all — their
+ * parent in the spec is Algebra, so one card is genuinely all they need.
+ * `Traversable` descends from Functor, so it wants `map` and nothing else.
+ */
+/**
+ * What a combo pays, from how many cards it asks for.
+ *
+ * One price per card count, for every combo alike. Prices used to be set combo
+ * by combo, and once `Foldable` needed only `reduce` the old ladder-era 6 made
+ * one card worth three `map`s — so every wildcard in the game became `reduce`,
+ * and the share of players who finished a Monad fell from 58% to 38%. A game
+ * about climbing the ladder cannot have its best deal sitting off to the side.
+ *
+ * The last two rungs pay a little over the line (9 and 11 rather than 8 and 10)
+ * because finishing is worth more than the sum of the steps.
+ */
+const price = [0, 2, 4, 6, 9, 11] as const;
+const pays = (requires: readonly string[]): number => price[requires.length] ?? requires.length * 2;
+
+const combo = (
+  name: string,
+  family: ComboDefinition['family'],
+  where: readonly ContainerName[],
+  requires: readonly string[],
+): ComboDefinition => ({ name, family, score: pays(requires), containers: where, requires });
+
 export const comboDefinitions: readonly ComboDefinition[] = [
-  { name: 'Functor', family: 'base', score: 2, containers, requires: ['map'] },
-  { name: 'Apply', family: 'base', score: 4, containers, requires: ['map', 'ap'] },
-  { name: 'Applicative', family: 'base', score: 6, containers, requires: ['map', 'ap', 'pure'] },
-  { name: 'Monad', family: 'base', score: 9, containers, requires: ['map', 'ap', 'pure', 'chain'] },
-  { name: 'Alternative', family: 'special', score: 11, containers: ['Maybe'], requires: ['map', 'ap', 'pure', 'alt', 'zero'] },
-  { name: 'Bifunctor', family: 'special', score: 6, containers: ['Either'], requires: ['map', 'bimap'] },
-  { name: 'Foldable', family: 'special', score: 6, containers: ['List'], requires: ['map', 'reduce'] },
-  { name: 'Traversable', family: 'special', score: 10, containers: ['List'], requires: ['map', 'reduce', 'traverse'] },
+  combo('Functor', 'base', containers, ['map']),
+  combo('Apply', 'base', containers, ['map', 'ap']),
+  combo('Applicative', 'base', containers, ['map', 'ap', 'pure']),
+  combo('Chain', 'base', containers, ['map', 'ap', 'chain']),
+  combo('Monad', 'base', containers, ['map', 'ap', 'pure', 'chain']),
+
+  combo('Alt', 'special', containers, ['map', 'alt']),
+  combo('Plus', 'special', ['Maybe', 'List'], ['map', 'alt', 'zero']),
+  combo('Alternative', 'special', ['Maybe', 'List'], ['map', 'ap', 'pure', 'alt', 'zero']),
+
+  combo('ChainRec', 'special', containers, ['map', 'ap', 'chain', 'chainRec']),
+  combo('Filterable', 'special', ['Maybe', 'List'], ['filter']),
+  combo('Foldable', 'special', ['Maybe', 'Either', 'List'], ['reduce']),
+  combo('Traversable', 'special', ['Maybe', 'Either', 'List'], ['map', 'traverse']),
+  combo('Bifunctor', 'special', ['Either'], ['bimap']),
 ];
 
 /** One filled slot, as `Container:operation` — `Maybe:map`. */
@@ -69,6 +117,15 @@ const slotsWorthFilling: ReadonlyArray<readonly [ContainerName, string]> = (() =
   }
   return list;
 })();
+
+/**
+ * The slots that exist at all — a container paired with an operation it really
+ * has. A wildcard may stand in for a printed card; it may not invent one that
+ * could never be printed.
+ */
+const realSlots: ReadonlySet<string> = new Set(
+  slotsWorthFilling.map(([container, operation]) => slot(container, operation)),
+);
 
 /**
  * Assigns the wildcards once, for the whole play area.
@@ -133,10 +190,12 @@ export function allocateCoverage(cards: readonly Card[]): Coverage {
       if (!fits(card, container, operation)) continue;
       // The blank on the card is what spreads. `*.map` and `*.*` leave the
       // container blank, so once the operation is settled they supply it in
-      // every container at once — one card, four Functors. `Maybe.*` has its
-      // container printed, so it serves Maybe and nowhere else.
+      // every container that HAS that operation — one card, four Functors.
+      // Not every container: Task cannot be folded, so a joker reading itself
+      // as `reduce` reaches Maybe, Either and List and stops there. `Maybe.*`
+      // has its container printed, so it serves Maybe and nowhere else.
       const filled = (card.container === '*'
-        ? containers.map((c) => slot(c, operation))
+        ? containers.filter((c) => realSlots.has(slot(c, operation))).map((c) => slot(c, operation))
         : [slot(container, operation)]
       ).filter((key) => !covered.has(key));
       if (filled.length === 0) continue;

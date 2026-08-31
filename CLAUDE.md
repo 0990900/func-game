@@ -167,41 +167,60 @@ test/                node:test. *.test.ts는 신규, *.test.js는 레거시
 
 ## 카드와 점수
 
-신규 코어의 덱은 67장이다(`src/core/cards.ts`, `test/core-units.test.ts`가 검증). 레거시 `src/game/cards.js`는
-순서 바꾸기 카드가 없어 66장이며 `test/deck.test.js`가 그쪽을 검증한다.
+신규 코어의 덱은 81장이다(`src/core/cards.ts`). 레거시 `src/game/cards.js`는 옛 구성 그대로 66장이며
+`test/deck.test.js`가 그쪽을 검증한다.
 
-기본 조합은 컨테이너별 최고 단계 하나만 계산한다.
+**컨테이너는 그 타입이 실제로 가진 연산만 갖는다.** 빠진 자리는 실수가 아니라 가르칠 내용이다.
 
-| 조합 | 필요 카드 | 점수 |
-|---|---|---:|
-| Functor | map | 2 |
-| Apply | map + ap | 4 |
-| Applicative | map + ap + pure | 6 |
-| Monad | map + ap + pure + chain | 9 |
+| | map ap pure chain | alt | zero | filter | reduce | traverse | bimap | chainRec |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| Maybe | ○ | ○ | ○ | ○ | ○ | ○ | ✗ | ○ |
+| Either | ○ | ○ | **✗** | **✗** | ○ | ○ | ○ | ○ |
+| List | ○ | ○ | ○ | ○ | ○ | ○ | ✗ | ○ |
+| Task | ○ | ○ | **✗** | **✗** | **✗** | **✗** | **✗** | ○ |
 
-특수 조합은 기본 조합과 별도로 계산한다.
+- Task는 값을 내주지 않는다 → 접을 수도, 뒤집을 수도, 거를 수도 없다
+- Either는 실패할 때 반드시 이유를 들고 있다 → 빈 값(`zero`)을 만들 수 없다
+- Either만 칸이 둘이다 → `bimap`은 Either에만 있다
 
-| 조합 | 필요 카드 | 점수 |
-|---|---|---:|
-| Maybe Alternative | map + ap + pure + alt + zero | 11 |
-| Either Bifunctor | map + bimap | 6 |
-| List Foldable | map + reduce | 6 |
-| List Traversable | map + reduce + traverse | 10 |
+## 조합
+
+사다리는 일직선이 아니다. `Applicative`와 `Chain`은 `Apply`에서 갈라진 형제이고 **`Monad`는 둘이 만나는
+합류점**이다. `Alt` → `Plus` 가 두 번째 갈래이고 `Alternative`가 그 합류점이다. 두 형제를 동시에 갖는 것이
+곧 Monad라서 "컨테이너별 최고 단계 하나만" 규칙에 애매함이 생기지 않는다.
+
+**조합은 그 타입클래스가 요구하는 것만 요구한다.** 게임을 어렵게 하려고 `map`을 덧붙이지 않는다 —
+`Foldable`·`Bifunctor`·`Filterable`은 명세상 부모가 Algebra라 카드 한 장이면 성립한다.
+
+| 필요 카드 | 조합 | 필요한 연산 | 점수 | 붙는 컨테이너 |
+|---:|---|---|---:|---|
+| 1장 | Functor | map | 2 | 네 곳 |
+| 1장 | Filterable | filter | 2 | Maybe · List |
+| 1장 | Foldable | reduce | 2 | Maybe · Either · List |
+| 1장 | Bifunctor | bimap | 2 | Either |
+| 2장 | Apply | map + ap | 4 | 네 곳 |
+| 2장 | Alt | map + alt | 4 | 네 곳 |
+| 2장 | Traversable | map + traverse | 4 | Maybe · Either · List |
+| 3장 | Applicative | map + ap + pure | 6 | 네 곳 |
+| 3장 | Chain | map + ap + chain | 6 | 네 곳 |
+| 3장 | Plus | map + alt + zero | 6 | Maybe · List |
+| 4장 | Monad | map + ap + pure + chain | 9 | 네 곳 |
+| 4장 | ChainRec | map + ap + chain + chainRec | 9 | 네 곳 |
+| 5장 | Alternative | map + ap + pure + alt + zero | 11 | Maybe · List |
+
+**점수는 필요한 카드 수 하나로만 정한다.** 조합마다 값을 따로 매기던 시절, `Foldable`이 `reduce` 한 장으로
+성립하게 되면서 옛 6점이 `map` 세 장 값이 됐고, 게임의 모든 와일드카드가 `reduce`로 쏠려 Monad 완성자가
+58%에서 38%로 떨어졌다. 사다리를 오르는 게임에서 가장 남는 장사가 사다리 밖에 있으면 안 된다.
+마지막 두 칸(9·11)만 선형(8·10)보다 조금 높다 — 끝내는 것은 단계의 합보다 값지다.
 
 Utility는 서로 다른 종류 수로 점수를 계산한다.
 
-- 1종 1점
-- 2종 2점
-- 3종 5점
-- 4종 8점
-- 5종 12점
-- 6종 17점
-- 7종 이상은 종류마다 4점 추가
+- 1종 1점 · 2종 2점 · 3종 5점 · 4종 8점 · 5종 12점 · 6종 17점 · 7종 이상은 종류마다 4점 추가
 
 **첫 장이 0점이면 안 된다.** 예전 곡선은 1종을 0점으로 두었는데, 첫 `map`은 그 자리에서 Functor 2점을
 만드는 반면 첫 유틸리티는 아무것도 사지 못하고 나중을 약속만 했다. 그래서 아무도 유틸리티 줄을 시작하지
 않았고, 시장은 교환이 있어야만 돌기 때문에 유틸리티가 시장에 쌓인 채 아무도 가져가지 않는 상태가 됐다.
-전 구간 +1은 시작 부담(첫 유틸리티는 여전히 Functor의 절반)을 남기면서 그 거부만 없앤다.
+전 구간 +1은 시작 부담을 남기면서 그 거부만 없앤다.
 
 ## 조커 배정
 
@@ -221,6 +240,8 @@ Utility는 서로 다른 종류 수로 점수를 계산한다.
 - **배정이 옮겨갈 수는 있다.** 나중에 온 카드가 더 나은 배치를 열면 조커는 그리로 간다. 이미 선언한 Claim은
   `claimGroups`에 남아 회수되지 않고, 총점도 내려가지 않는다.
 - 조합마다 조커 풀을 새로 만들지 않는다. 그렇게 하면 조커 한 장이 연산 여러 개를 겸하게 된다.
+- **조커는 그 컨테이너에 실재하지 않는 연산을 만들어내지 않는다.** `reduce`로 배정된 조커는 Maybe·Either·List에
+  닿고 Task는 건너뛴다. Task는 접을 수 없기 때문이다.
 
 **이 게임은 게임이 먼저다.** 조커 한 장으로 네 컨테이너가 한 단계씩 오르는 건 큰 턴이고, 그게 의도다.
 `*.map`·`*.ap`·`*.pure`·`*.*` 네 장이 한 사람에게 몰리면 155점짜리 판이 나온다 — 평균이 42점인 게임에서.

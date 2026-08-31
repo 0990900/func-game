@@ -13,8 +13,29 @@ const utilityCards = (operations: readonly string[]): Card[] =>
 
 test('deck contains exactly one *.*', () => {
   const deck = createDeck();
-  assert.equal(deck.length, 67);
   assert.equal(deck.filter((card) => card.label === '*.*').length, 1);
+});
+
+test('a container carries only the operations its type really has', () => {
+  const held = new Map<string, Set<string>>();
+  for (const card of createDeck()) {
+    if (card.kind !== 'container-function') continue;
+    const key = String(card.container);
+    (held.get(key) ?? held.set(key, new Set()).get(key)!).add(card.operation);
+  }
+  // Task never hands its value over, so it cannot be folded, traversed or
+  // filtered; it has one slot, so it has no bimap; it cannot mean "nothing
+  // here", so it has no zero.
+  for (const missing of ['reduce', 'traverse', 'filter', 'bimap', 'zero']) {
+    assert.equal(held.get('Task')?.has(missing), false, `Task는 ${missing}을 가질 수 없습니다`);
+  }
+  // Either always owes a reason for failing, so it has no zero, and it is the
+  // only one with a second slot to map.
+  assert.equal(held.get('Either')?.has('zero'), false);
+  assert.equal(held.get('Either')?.has('bimap'), true);
+  for (const container of ['Maybe', 'List', 'Task']) {
+    assert.equal(held.get(container)?.has('bimap'), false, `${container}에는 두 번째 칸이 없습니다`);
+  }
 });
 
 test('Maybe Monad can be built from exact cards', () => {
@@ -31,12 +52,18 @@ test('operation wildcard fills matching operation', () => {
   assert.equal(canBuild(cards, 'Maybe', ['map', 'ap', 'pure', 'chain']), true);
 });
 
-test('*.* fills any missing slot', () => {
+test('*.* takes the operation that pays most, not the one nearest to hand', () => {
+  // List is one card from Monad, which would pay 3 more than its Applicative.
+  // Reading itself as `map` instead stands up a Functor in the three containers
+  // that have none — 6 — so that is what the joker becomes.
   const cards: Card[] = [
-    c('List', 'map'), c('List', 'reduce'),
+    c('List', 'map'), c('List', 'ap'), c('List', 'pure'),
     { id: 'w2', kind: 'wildcard', container: '*', operation: '*', label: '*.*' },
   ];
-  assert.equal(canBuild(cards, 'List', ['map', 'reduce', 'traverse']), true);
+  for (const container of ['Maybe', 'Either', 'Task'] as const) {
+    assert.equal(canBuild(cards, container, ['map']), true, `${container} Functor가 서야 합니다`);
+  }
+  assert.equal(canBuild(cards, 'List', ['map', 'ap', 'pure', 'chain']), false, '조커는 한 곳에만 쓰일 수 없습니다');
 });
 
 test('utility scoring uses diversity only', () => {

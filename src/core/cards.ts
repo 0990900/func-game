@@ -2,11 +2,34 @@ import type { Card, ContainerName } from './types.ts';
 
 type Spec = readonly [ContainerName, string, number];
 
+/**
+ * The deck, one line per container.
+ *
+ * A container carries an operation only when the real type has it. Task never
+ * hands its value over, so it cannot be folded, traversed or compared; Either
+ * always holds a reason for failing, so it has no `zero`; only Either has two
+ * slots, so only Either has `bimap`. The gaps are the lesson, not an oversight.
+ *
+ * The operations added last — `filter`, `chainRec`, and the missing `alt`,
+ * `zero`, `reduce`, `traverse` — carry one copy each rather than two. Every
+ * card added to the deck makes every other combo rarer, so the new branches
+ * open without drowning the ladder that was already there.
+ */
 const specs: readonly Spec[] = [
-  ['Maybe', 'map', 2], ['Maybe', 'ap', 2], ['Maybe', 'pure', 2], ['Maybe', 'chain', 2], ['Maybe', 'alt', 2], ['Maybe', 'zero', 1],
-  ['Either', 'map', 2], ['Either', 'ap', 2], ['Either', 'pure', 2], ['Either', 'chain', 2], ['Either', 'alt', 1], ['Either', 'bimap', 2],
-  ['List', 'map', 2], ['List', 'ap', 2], ['List', 'pure', 2], ['List', 'chain', 2], ['List', 'reduce', 2], ['List', 'traverse', 2],
+  ['Maybe', 'map', 2], ['Maybe', 'ap', 2], ['Maybe', 'pure', 2], ['Maybe', 'chain', 2],
+  ['Maybe', 'alt', 2], ['Maybe', 'zero', 1], ['Maybe', 'filter', 1],
+  ['Maybe', 'reduce', 1], ['Maybe', 'traverse', 1], ['Maybe', 'chainRec', 1],
+
+  ['Either', 'map', 2], ['Either', 'ap', 2], ['Either', 'pure', 2], ['Either', 'chain', 2],
+  ['Either', 'alt', 2], ['Either', 'bimap', 2],
+  ['Either', 'reduce', 1], ['Either', 'traverse', 1], ['Either', 'chainRec', 1],
+
+  ['List', 'map', 2], ['List', 'ap', 2], ['List', 'pure', 2], ['List', 'chain', 2],
+  ['List', 'alt', 1], ['List', 'zero', 1], ['List', 'filter', 1],
+  ['List', 'reduce', 2], ['List', 'traverse', 2], ['List', 'chainRec', 1],
+
   ['Task', 'map', 2], ['Task', 'ap', 2], ['Task', 'pure', 2], ['Task', 'chain', 2],
+  ['Task', 'alt', 1], ['Task', 'chainRec', 1],
 ];
 
 export const utilities: readonly string[] = [

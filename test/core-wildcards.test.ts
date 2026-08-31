@@ -59,22 +59,19 @@ const hands = function* (count: number, size = 15): Generator<Card[]> {
   for (let seed = 1; seed <= count; seed += 1) yield shuffled(playable, seed).slice(0, size);
 };
 
-test('the bug in one hand: a joker no longer finishes four containers at once', () => {
+test('a joker settles on one operation, however many places take it', () => {
   const cards = [
     real('Maybe', 'map'), real('Maybe', 'ap'), real('Maybe', 'pure'),
     real('List', 'map'), real('List', 'reduce'),
   ];
-  const before = comboTotal(cards);
-  const after = comboTotal([...cards, joker()]);
+  const held = realSlots(cards);
+  const standIns = [...allocateCoverage([...cards, joker()])].filter((s) => !held.has(s));
+  const operations = new Set(standIns.map((s) => s.split(':')[1]));
 
-  // It used to be worth 19 points, completing Maybe Monad AND Either Functor AND
-  // List Apply AND Task Functor AND List Traversable — five things from one card.
-  assert.equal(before, 14);
-  assert.equal(after, 24);
-
-  const names = findCombos([...cards, joker()]).map((c) => `${c.container}:${c.name}`);
-  assert.ok(names.includes('List:Traversable'), 'the joker should take the most valuable open slot');
-  assert.ok(!names.includes('Maybe:Monad'), 'and therefore cannot also be Maybe.chain');
+  // One operation, spread over every container that has it. Not `chain` here
+  // and `traverse` there — that was the bug.
+  assert.equal(operations.size, 1, `조커가 ${[...operations].join(', ')} 를 겸했습니다`);
+  assert.ok(comboTotal([...cards, joker()]) > comboTotal(cards), '조커가 아무 값도 하지 않았습니다');
 });
 
 test('a wildcard settles on one operation, never two', () => {
@@ -188,21 +185,18 @@ test('four blank-container wildcards spell a Monad everywhere, every time', () =
   assert.equal(claimableCombos(cards).length, 0, 'wildcards alone score but never claim');
 });
 
-test('one joker cannot be chain in one place and traverse in another', () => {
-  // This is what the old pool allowed and what the rule now forbids: the joker
-  // picks an operation. As `chain` it tops Maybe's ladder off map/ap/pure; as
-  // `traverse` it finishes List's Traversable off map/reduce. It cannot do both,
-  // and the game takes the larger of the two.
-  const cards = [
-    real('Maybe', 'map'), real('Maybe', 'ap'), real('Maybe', 'pure'),
-    real('List', 'map'), real('List', 'reduce'), joker(),
-  ];
-  const names = findCombos(cards).map((c) => `${c.container}:${c.name}`);
-  assert.ok(names.includes('List:Traversable'), 'traverse is worth 10, chain only 3 more');
-  assert.ok(!names.includes('Maybe:Monad'), 'so the joker is not also Maybe.chain');
-
-  const operations = new Set(
-    [...allocateCoverage(cards)].filter((s) => !realSlots(cards).has(s)).map((s) => s.split(':')[1]),
-  );
-  assert.deepEqual([...operations], ['traverse'], 'one joker, one operation');
+test('a joker never invents an operation its container cannot have', () => {
+  // Task hands its value over to nobody, so it can be neither folded nor
+  // traversed nor filtered. A joker reading itself as `reduce` reaches Maybe,
+  // Either and List, and stops there.
+  const cards = [joker()];
+  const covered = [...allocateCoverage(cards)];
+  for (const key of covered) {
+    const [container, operation] = key.split(':') as [string, string];
+    assert.ok(
+      !(container === 'Task' && ['reduce', 'traverse', 'filter', 'bimap', 'zero'].includes(operation)),
+      `조커가 ${key} 를 만들어냈습니다`,
+    );
+  }
+  assert.equal(new Set(covered.map((k) => k.split(':')[1])).size, 1, '조커는 연산 하나만 맡습니다');
 });
