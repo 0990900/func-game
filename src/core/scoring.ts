@@ -1,5 +1,6 @@
 import { scoringCombos } from './combos.ts';
-import type { Card, Combo, Player, ScoreBreakdown } from './types.ts';
+import { createDeck } from './cards.ts';
+import type { Card, Combo, ContainerName, InstanceRow, Player, ScoreBreakdown } from './types.ts';
 
 export interface UtilityScore {
   readonly diversity: number;
@@ -36,8 +37,61 @@ export function scoreUtilities(cards: readonly Card[]): UtilityScore {
   return { diversity, total: diversity, count: n };
 }
 
+/**
+ * Which operations exist for more than one container, and where.
+ *
+ * `bimap` is left out: only Either has a second slot to map, so a single card
+ * would be a finished column, which is no achievement at all.
+ */
+const columns: ReadonlyArray<{ operation: string; possible: readonly ContainerName[] }> = (() => {
+  const seen = new Map<string, ContainerName[]>();
+  for (const card of createDeck()) {
+    if (card.kind !== 'container-function' || card.container === '*' || card.container === null) continue;
+    const list = seen.get(card.operation) ?? [];
+    if (!list.includes(card.container)) list.push(card.container);
+    seen.set(card.operation, list);
+  }
+  return [...seen]
+    .filter(([, possible]) => possible.length >= 2)
+    .map(([operation, possible]) => ({ operation, possible }));
+})();
+
+/** What holding one operation in n containers pays. */
+const acrossPrice = [0, 0, 2, 5, 9] as const;
+
+/**
+ * Holding the same operation across containers.
+ *
+ * Combos read along a container — everything Maybe can do. This reads the other
+ * way: `map` for Maybe AND Either AND List AND Task is not four unrelated cards,
+ * it is one interface implemented four times, which is the whole idea of a
+ * typeclass. The board has rows worth points and, until now, columns worth
+ * nothing.
+ *
+ * Printed cards only. A `*.map` covers every container's map at once, so
+ * counting wildcards would make one card a finished column — and a wildcard
+ * standing in for an instance is not the same as having written it, which is
+ * the distinction Purist and Polyglot already turn on.
+ */
+export function scoreInstances(cards: readonly Card[]): readonly InstanceRow[] {
+  const rows: InstanceRow[] = [];
+  for (const { operation, possible } of columns) {
+    const held = possible.filter((container) => cards.some((card) =>
+      card.kind === 'container-function'
+      && card.container === container
+      && card.operation === operation));
+    if (held.length < 2) continue;
+    rows.push({ operation, possible, held, score: acrossPrice[held.length] ?? 9 });
+  }
+  return rows;
+}
+
+export const instanceScore = (cards: readonly Card[]): number =>
+  scoreInstances(cards).reduce((sum, row) => sum + row.score, 0);
+
 export interface PlayerScore extends ScoreBreakdown {
   readonly combos: readonly Combo[];
+  readonly instances: readonly InstanceRow[];
 }
 
 /**
@@ -58,11 +112,15 @@ export function scorePlayer(player: Pick<Player, 'playArea' | 'claimGroups'>): P
   const comboScore = combos.reduce((sum, combo) => sum + combo.score, 0);
   const utilities = scoreUtilities(player.playArea);
   const claims = claimScore(player.claimGroups);
+  const instances = scoreInstances(player.playArea);
+  const across = instances.reduce((sum, row) => sum + row.score, 0);
   return {
     combos,
     comboScore,
+    instances,
     utilityScore: utilities.total,
     claimScore: claims,
-    total: comboScore + utilities.total + claims,
+    instanceScore: across,
+    total: comboScore + utilities.total + claims + across,
   };
 }

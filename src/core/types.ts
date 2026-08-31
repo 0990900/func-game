@@ -148,7 +148,19 @@ export interface ScoreBreakdown {
   readonly comboScore: number;
   readonly utilityScore: number;
   readonly claimScore: number;
+  /** Holding one operation across several containers — see `scoreInstances`. */
+  readonly instanceScore: number;
   readonly total: number;
+}
+
+/** One operation, and the containers a player holds a printed card of it for. */
+export interface InstanceRow {
+  readonly operation: string;
+  /** The containers whose type really has this operation. */
+  readonly possible: readonly ContainerName[];
+  /** The ones this player holds a printed card for. */
+  readonly held: readonly ContainerName[];
+  readonly score: number;
 }
 
 /**
@@ -165,6 +177,8 @@ export interface FinalScore extends ScoreBreakdown {
   readonly combos: readonly Combo[];
   /** How many different utility operations were held. The score follows from this alone. */
   readonly utilityKinds: number;
+  /** Every operation held in more than one container, and what it paid. */
+  readonly instances: readonly InstanceRow[];
   /** Combos this player declared, grouped by the turn each group was declared on. */
   readonly claimGroups: ReadonlyArray<readonly string[]>;
   /** Revealed now that the game is over. Null if the player never chose one. */

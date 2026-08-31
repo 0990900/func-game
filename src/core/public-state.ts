@@ -102,6 +102,7 @@ function publicScore(player: Player): ScoreBreakdown {
     comboScore: score.comboScore,
     utilityScore: score.utilityScore,
     claimScore: score.claimScore,
+    instanceScore: score.instanceScore,
     total: score.total,
   };
 }

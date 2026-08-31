@@ -143,7 +143,7 @@ test('live public score excludes the secret goal', () => {
 
   const state = publicState(table.room, a.id);
   assert.deepEqual(state.players[0]!.publicScore, {
-    comboScore: 2, utilityScore: 0, claimScore: 0, total: 2,
+    comboScore: 2, utilityScore: 0, claimScore: 0, instanceScore: 0, total: 2,
   });
   assert.equal('goalScore' in state.players[0]!.publicScore, false);
 });
