@@ -11,7 +11,7 @@
 import { createDeck } from './cards.ts';
 import { groupScore, scorePlayer } from './scoring.ts';
 import { claimableCombos, comboKey, findCombos, isClaimable } from './combos.ts';
-import { goals } from './goals.ts';
+import { goalCheck, goals, judge } from './goals.ts';
 import { ruleError } from './errors.ts';
 import { scoreUtilities } from './scoring.ts';
 import type {
@@ -190,9 +190,16 @@ function deal(deps: RuleDeps, room: Room): void {
   addEvent(deps, room, 'game_start', '게임을 시작합니다. 비밀 목표를 선택하세요.');
   addEvent(deps, room, 'turn_order', `자리 순서: ${room.players.map((player) => player.name).join(' → ')}`);
 
-  const goalDeck = shuffle(goals, deps.random);
-  room.players.forEach((p, idx) => {
-    p.goalOptions = [goalDeck[(idx * 2) % goalDeck.length]!, goalDeck[(idx * 2 + 1) % goalDeck.length]!];
+  // Two goals each, drawn from a shuffle of their own.
+  //
+  // Dealing four pairs off one deck needs eight goals and there are six, so the
+  // old index wrapped: the fourth seat was handed the first seat's pair, every
+  // single game. Shuffling per seat means two players may happen to be offered
+  // the same goal — which the rules allow, since a goal is not exclusive — but
+  // never by construction.
+  room.players.forEach((p) => {
+    const offered = shuffle(goals, deps.random);
+    p.goalOptions = [offered[0]!, offered[1]!];
     if (p.bot) p.goal = p.goalOptions[0]!;
   });
 }
@@ -389,22 +396,11 @@ export function setPlayerConnection(deps: RuleDeps, room: Room, playerId: string
 
 export function goalScore(player: Pick<Player, 'playArea' | 'goal'>): number {
   if (!player.goal) return 0;
-  const combos = findCombos(player.playArea);
-  const exact = (container: ContainerName, op: string): boolean =>
-    player.playArea.some((c) => c.kind === 'container-function' && c.container === container && c.operation === op);
-  const goal: Goal = player.goal;
-  let ok = false;
-  if (goal.id === 'specialist') {
-    const count: Record<string, number> = {};
-    combos.forEach((c) => { count[c.container] = (count[c.container] || 0) + 1; });
-    ok = Object.values(count).some((n) => n >= 2);
-  } else if (goal.id === 'generalist') ok = new Set(combos.map((c) => c.container)).size >= 3;
-  else if (goal.id === 'purist') {
-    ok = (['Maybe', 'Either', 'List', 'Task'] as const).some((c) => ['map', 'ap', 'pure', 'chain'].every((op) => exact(c, op)));
-  } else if (goal.id === 'utility-belt') ok = scoreUtilities(player.playArea).count >= 5;
-  else if (goal.id === 'polyglot') ok = (['Maybe', 'Either', 'List', 'Task'] as const).every((c) => exact(c, 'map'));
-  else if (goal.id === 'collector') ok = new Set(player.playArea.filter((c) => c.operation).map((c) => c.operation)).size >= 7;
-  return ok ? goal.score : 0;
+  // Judged by the goal itself. A chain of id comparisons here meant an
+  // unrecognised goal scored zero without complaint, for the whole game.
+  const definition = judge(player.goal.id);
+  if (!definition) throw ruleError(`판정할 수 없는 목표입니다: ${player.goal.id}`);
+  return definition.met(goalCheck(player.playArea)) ? definition.score : 0;
 }
 
 function addEvent(deps: RuleDeps, room: Room, type: EventType, message: string, playerId: string | null = null): void {
