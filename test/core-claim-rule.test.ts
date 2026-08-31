@@ -52,16 +52,22 @@ test('a combo held up only by wildcards is built but not claimable', () => {
 });
 
 test('one real card of the container is enough to make it claimable', () => {
-  const cards = [exact('Maybe', 'map'), universal, operationWild('ap')];
+  // Two real Maybe cards, so the allocator's best move is to finish Maybe
+  // Applicative with the wildcard rather than start a line somewhere else.
+  const cards = [exact('Maybe', 'map'), exact('Maybe', 'pure'), operationWild('ap')];
   assert.equal(isClaimable(cards, 'Maybe', ['map']), true);
-  // Apply needs map and ap; map is real, ap is a wildcard — still claimable.
-  assert.equal(isClaimable(cards, 'Maybe', ['map', 'ap']), true);
+  // Applicative needs map, ap and pure; ap is a wildcard — still claimable.
+  assert.equal(isClaimable(cards, 'Maybe', ['map', 'ap', 'pure']), true);
 });
 
 test('the real card has to be one the combo asked for', () => {
   // Maybe.zero is a real Maybe card, but Monad does not want it: every
-  // operation Monad needs is being covered by a wildcard.
-  const cards = [exact('Maybe', 'zero'), universal, universal, universal, universal];
+  // operation Monad needs is being covered by a wildcard. These four operation
+  // wildcards can spell nothing but a Monad, so that is where they land.
+  const cards = [
+    exact('Maybe', 'zero'),
+    operationWild('map'), operationWild('ap'), operationWild('pure'), operationWild('chain'),
+  ];
   assert.equal(findCombos(cards).some((c) => c.container === 'Maybe' && c.name === 'Monad'), true);
   assert.equal(isClaimable(cards, 'Maybe', ['map', 'ap', 'pure', 'chain']), false);
 });

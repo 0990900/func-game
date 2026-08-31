@@ -12,68 +12,162 @@ export const comboDefinitions: readonly ComboDefinition[] = [
   { name: 'Traversable', family: 'special', score: 10, containers: ['List'], requires: ['map', 'reduce', 'traverse'] },
 ];
 
-interface Resources {
-  readonly exact: ReadonlySet<string>;
-  readonly operationWildcards: readonly string[];
-  readonly containerWildcards: number;
-  readonly universalWildcards: number;
-}
+/** One filled slot, as `Container:operation` — `Maybe:map`. */
+const slot = (container: ContainerName, operation: string): string => `${container}:${operation}`;
 
-function resources(cards: readonly Card[], container: ContainerName): Resources {
-  const exact = new Set<string>();
-  const operationWildcards: string[] = [];
-  let containerWildcards = 0;
-  let universalWildcards = 0;
+/**
+ * Every slot a play area supplies, wildcards already assigned.
+ *
+ * A wildcard stands for ONE operation in ONE container. That slot then behaves
+ * exactly like a real card and supports every combo needing it — an assigned
+ * `Maybe.ap` feeds both Maybe Apply and Maybe Monad, just as the printed card
+ * would. What it can no longer do is be two operations at once.
+ */
+export type Coverage = ReadonlySet<string>;
 
-  for (const card of cards) {
-    if (card.kind === 'container-function' && card.container === container) exact.add(card.operation);
-    else if (card.kind === 'operation-wildcard') operationWildcards.push(card.operation);
-    else if (card.kind === 'container-wildcard' && card.container === container) containerWildcards += 1;
-    else if (card.kind === 'wildcard') universalWildcards += 1;
+const isWildcard = (card: Card): boolean =>
+  card.kind === 'operation-wildcard' || card.kind === 'container-wildcard' || card.kind === 'wildcard';
+
+/** Narrowest first, so a universal joker is spent only when nothing else fits. */
+const reach = (card: Card): number =>
+  card.kind === 'operation-wildcard' ? 0 : card.kind === 'container-wildcard' ? 1 : 2;
+
+const fits = (card: Card, container: ContainerName, operation: string): boolean =>
+  card.kind === 'operation-wildcard' ? card.operation === operation
+    : card.kind === 'container-wildcard' ? card.container === container
+      : card.kind === 'wildcard';
+
+/** What a coverage is worth: the top base rung per container, plus every special. */
+function coverageScore(covered: Coverage): number {
+  let total = 0;
+  for (const container of containers) {
+    let base = 0;
+    for (const definition of comboDefinitions) {
+      if (!definition.containers.includes(container)) continue;
+      if (!definition.requires.every((operation) => covered.has(slot(container, operation)))) continue;
+      if (definition.family === 'base') base = Math.max(base, definition.score);
+      else total += definition.score;
+    }
+    total += base;
   }
-  return { exact, operationWildcards, containerWildcards, universalWildcards };
+  return total;
 }
 
 /**
- * Which of `requires` this play area can supply for `container`, spending each
- * card on at most one slot: an exact card first, then an operation wildcard for
- * that operation, then any free wildcard.
+ * Assigns the wildcards once, for the whole play area.
  *
- * The UI's combo hints read this, so a slot shown as covered is a slot the
- * rules agree is covered.
+ * Before this existed, each combo was judged with its own fresh pool, so one
+ * `*.*` counted as Maybe.chain and Either.map and List.traverse simultaneously —
+ * a single card completing structures in four containers at once. Wildcards are
+ * what make a 15-card area dense enough to finish a ladder, so the fix is not to
+ * remove them but to spend each one exactly once.
+ *
+ * The rule, whole: **the game puts each wildcard wherever it raises the score
+ * the most.** Repeatedly take the combo whose completion gains the most points,
+ * cheapest first when tied, then in printed order; stop when nothing gains.
+ */
+/** Every slot a combo asks for, so a wildcard is never spent somewhere useless. */
+const slotsWorthFilling: ReadonlyArray<readonly [ContainerName, string]> = (() => {
+  const seen = new Set<string>();
+  const list: Array<[ContainerName, string]> = [];
+  for (const definition of comboDefinitions) {
+    for (const container of definition.containers) {
+      for (const operation of definition.requires) {
+        const key = slot(container, operation);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        list.push([container, operation]);
+      }
+    }
+  }
+  return list;
+})();
+
+export function allocateCoverage(cards: readonly Card[]): Coverage {
+  const printed = new Set<string>();
+  for (const card of cards) {
+    // `container` is widened to include '*' and null for wildcards and utilities;
+    // a container-function always names one of the four.
+    if (card.kind === 'container-function' && card.container !== '*' && card.container !== null) {
+      printed.add(slot(card.container, card.operation));
+    }
+  }
+
+  // Ordered by what they are, never by when they were drawn, so the same cards
+  // in a different order allocate the same way.
+  const wildcards = cards.filter(isWildcard).sort((a, b) =>
+    reach(a) - reach(b)
+    || String(a.container).localeCompare(String(b.container))
+    || a.operation.localeCompare(b.operation));
+  if (wildcards.length === 0) return printed;
+
+  const open = slotsWorthFilling.filter(([container, operation]) => !printed.has(slot(container, operation)));
+
+  // Exhaustive, not greedy. A greedy pass takes the biggest gain available at
+  // each step and can settle for a worse whole — which showed up as a printed
+  // card LOWERING its owner's score, because the better arrangement it unlocked
+  // was not the one greed walked into. Searching every arrangement also makes
+  // the rule monotone for free: a real card only ever widens the choices, so the
+  // best arrangement can never get worse.
+  let bestScore = coverageScore(printed);
+  let bestAssigned: string[] = [];
+  const assigned: string[] = [];
+  const seen = new Set<string>();
+
+  const search = (index: number, covered: Set<string>): void => {
+    const score = coverageScore(covered);
+    if (score > bestScore) {
+      bestScore = score;
+      bestAssigned = [...assigned];
+    }
+    if (index >= wildcards.length) return;
+    const card = wildcards[index]!;
+    // Leaving a wildcard idle is a legal arrangement: nothing it can reach helps.
+    search(index + 1, covered);
+    for (const [container, operation] of open) {
+      const key = slot(container, operation);
+      if (covered.has(key) || !fits(card, container, operation)) continue;
+      const memo = `${index + 1}|${[...assigned, key].sort().join(',')}`;
+      if (seen.has(memo)) continue;
+      seen.add(memo);
+      covered.add(key);
+      assigned.push(key);
+      search(index + 1, covered);
+      assigned.pop();
+      covered.delete(key);
+    }
+  };
+  search(0, new Set(printed));
+
+  const covered = new Set(printed);
+  for (const key of bestAssigned) covered.add(key);
+  return covered;
+}
+
+/**
+ * Which of `requires` this play area supplies for `container`.
+ *
+ * The UI's combo hints read this, so a slot shown as covered is a slot the rules
+ * agree is covered — including which combo a wildcard ended up serving.
  */
 export function coveredOperations(
   cards: readonly Card[],
   container: ContainerName,
   requires: readonly string[],
 ): Set<string> {
-  const r = resources(cards, container);
-  const opWilds = [...r.operationWildcards];
-  let freeWilds = r.containerWildcards + r.universalWildcards;
-  const covered = new Set<string>();
+  return coveredIn(allocateCoverage(cards), container, requires);
+}
 
-  for (const op of requires) {
-    if (r.exact.has(op)) {
-      covered.add(op);
-      continue;
-    }
-    const opIndex = opWilds.indexOf(op);
-    if (opIndex >= 0) {
-      opWilds.splice(opIndex, 1);
-      covered.add(op);
-      continue;
-    }
-    if (freeWilds > 0) {
-      freeWilds -= 1;
-      covered.add(op);
-    }
-  }
-  return covered;
+function coveredIn(covered: Coverage, container: ContainerName, requires: readonly string[]): Set<string> {
+  return new Set(requires.filter((operation) => covered.has(slot(container, operation))));
 }
 
 export function canBuild(cards: readonly Card[], container: ContainerName, requires: readonly string[]): boolean {
-  return coveredOperations(cards, container, requires).size === requires.length;
+  return builtIn(allocateCoverage(cards), container, requires);
 }
+
+const builtIn = (covered: Coverage, container: ContainerName, requires: readonly string[]): boolean =>
+  requires.every((operation) => covered.has(slot(container, operation)));
 
 /**
  * Whether a built combo may be claimed.
@@ -88,22 +182,27 @@ export function canBuild(cards: readonly Card[], container: ContainerName, requi
  */
 export function isClaimable(cards: readonly Card[], container: ContainerName, requires: readonly string[]): boolean {
   if (!canBuild(cards, container, requires)) return false;
-  return cards.some((card) =>
+  return holdsReal(cards, container, requires);
+}
+
+const holdsReal = (cards: readonly Card[], container: ContainerName, requires: readonly string[]): boolean =>
+  cards.some((card) =>
     card.kind === 'container-function'
     && card.container === container
     && requires.includes(card.operation));
-}
 
 /** The combos in this play area that may be claimed. */
 export function claimableCombos(cards: readonly Card[]): Combo[] {
-  return findCombos(cards).filter((combo) => isClaimable(cards, combo.container, combo.requires));
+  return findCombos(cards).filter((combo) => holdsReal(cards, combo.container, combo.requires));
 }
 
+/** Every combo the area satisfies, all rungs included, under one wildcard assignment. */
 export function findCombos(cards: readonly Card[]): Combo[] {
+  const covered = allocateCoverage(cards);
   const found: Combo[] = [];
   for (const def of comboDefinitions) {
     for (const container of def.containers) {
-      if (canBuild(cards, container, def.requires)) found.push({ ...def, container });
+      if (builtIn(covered, container, def.requires)) found.push({ ...def, container });
     }
   }
   return found;

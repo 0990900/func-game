@@ -30,7 +30,8 @@ npm start
 - 중앙 시장 4장
 - 현재 턴 플레이어만 시장 카드와 즉시 교환 가능
 - Maybe / Either / List / Task 카드
-- `*.operation`, `Container.*`, `*.*` 조커
+- `*.operation`, `Container.*`, `*.*` 조커 — 한 장이 **한 컨테이너의 한 연산**을 맡는다. 어느 자리에 쓸지는
+  게임이 점수가 가장 높아지는 쪽으로 정한다. 조커만으로 이룬 조합은 점수는 받지만 Claim할 수 없다.
 - Utility 카드
 - 타입클래스 조합 판정
 - Claim +1점
