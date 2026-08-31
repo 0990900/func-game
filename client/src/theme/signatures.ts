@@ -18,11 +18,35 @@ export const operationSignature: Record<string, readonly [string, string]> = {
   ap: ['F (a → b) → F a → F b', '함수도 구조 안에 있을 때 적용합니다.'],
   pure: ['a → F a', '보통 값을 구조 안으로 올립니다.'],
   chain: ['(a → F b) → F a → F b', '구조를 만드는 함수를 이어 붙이고 한 겹으로 눌러줍니다.'],
-  alt: ['F a → F a → F a', '앞이 비면 뒤를 씁니다.'],
-  zero: ['F a', '아무것도 없는 값. alt의 항등원입니다.'],
+  alt: ['F a → F a → F a', '둘 중 하나를 고릅니다. 고르는 방식은 컨테이너마다 다릅니다.'],
+  zero: ['F a', '비어 있는 값. alt의 항등원입니다.'],
   bimap: ['(a → b) → (c → d) → F a c → F b d', '두 자리를 각각 다른 함수로 바꿉니다.'],
+  filter: ['(a → boolean) → F a → F a', '조건을 통과하지 못한 것을 덜어냅니다.'],
   reduce: ['(b → a → b) → b → F a → b', '초깃값에서 시작해 하나로 접습니다.'],
   traverse: ['(a → G b) → F a → G (F b)', '효과를 안팎으로 뒤집습니다.'],
+  chainRec: ['((a → c, b → c, a) → F c) → a → F b', '끝날 때까지 스스로를 부릅니다. 스택을 쌓지 않습니다.'],
+};
+
+/**
+ * Operations that mean different things depending on the container.
+ *
+ * `alt` is one function name over four genuinely different behaviours — Maybe
+ * takes the first that holds something, List glues both together, Task starts
+ * both and keeps whichever finishes first. Printing Maybe's sentence on all
+ * four would teach three of them wrong, and this game is the typeclass, not a
+ * paraphrase of it.
+ */
+const containerNote: Record<string, Record<string, string>> = {
+  alt: {
+    Maybe: '앞이 비어 있으면 뒤를 씁니다.',
+    Either: '앞이 실패했으면 뒤를 씁니다.',
+    List: '두 리스트를 이어붙입니다.',
+    Task: '둘을 함께 시작해 먼저 끝나는 쪽을 씁니다.',
+  },
+  zero: {
+    Maybe: '아무것도 들어 있지 않은 값입니다. alt의 항등원입니다.',
+    List: '빈 리스트입니다. alt의 항등원입니다.',
+  },
 };
 
 /** Utility cards are plain functions; they have no container to substitute. */
@@ -77,10 +101,11 @@ export function cardBack(card: Card): CardBack {
   const entry = operationSignature[card.operation];
   if (!entry) return { signature: card.operation, note: '' };
 
-  const [shape, note] = entry;
+  const [shape, generalNote] = entry;
   // `*.map` keeps `F`: it has an operation but not a container to put in it.
   const name = card.container && card.container !== '*' ? card.container : null;
-  if (!name) return { signature: shape, note };
+  if (!name) return { signature: shape, note: generalNote };
+  const note = containerNote[card.operation]?.[name] ?? generalNote;
   const substitute = bareContainer.has(card.operation) ? name : applied[name] ?? name;
   return { signature: shape.replaceAll('F', substitute), note };
 }
