@@ -55,6 +55,7 @@ export interface GoalDefinition extends GoalSpec {
 const specs: readonly GoalSpec[] = [
   {
     id: 'specialist',
+    unit: '한 컨테이너 조합',
     name: 'Specialist',
     text: '한 컨테이너에서 서로 다른 조합 6개 이상 완성',
     score: 7,
@@ -69,6 +70,7 @@ const specs: readonly GoalSpec[] = [
   },
   {
     id: 'generalist',
+    unit: '컨테이너',
     name: 'Generalist',
     text: '네 컨테이너 모두에서 조합 완성',
     score: 6,
@@ -77,6 +79,7 @@ const specs: readonly GoalSpec[] = [
   },
   {
     id: 'purist',
+    unit: '조커 없는 Apply',
     name: 'Purist',
     text: '조커 없이 map과 ap를 같은 컨테이너에서 확보',
     score: 6,
@@ -86,6 +89,7 @@ const specs: readonly GoalSpec[] = [
   },
   {
     id: 'utility-belt',
+    unit: 'Utility',
     name: 'Utility Belt',
     text: 'Utility 3종 이상 수집',
     score: 6,
@@ -94,6 +98,7 @@ const specs: readonly GoalSpec[] = [
   },
   {
     id: 'polyglot',
+    unit: '사다리 밖 조합',
     name: 'Polyglot',
     text: '사다리 밖 조합을 4종류 이상 완성',
     score: 7,
@@ -104,6 +109,7 @@ const specs: readonly GoalSpec[] = [
   },
   {
     id: 'collector',
+    unit: '연산 종류',
     name: 'Collector',
     text: '서로 다른 연산 이름 9종 이상 확보',
     score: 7,
@@ -120,7 +126,7 @@ const definitions: readonly GoalDefinition[] = specs.map((spec) => ({
 
 /** What a player is dealt and stores: no functions, so the room stays cloneable. */
 export const goals: readonly Goal[] = definitions.map(
-  ({ id, name, text, score }) => ({ id, name, text, score }),
+  ({ id, name, text, score, unit }) => ({ id, name, text, score, unit }),
 );
 
 /** The definition behind a dealt goal, or null if nothing can judge it. */
@@ -145,4 +151,32 @@ export function goalCheck(playArea: readonly Card[]): GoalCheck {
         .map((card) => card.operation),
     ),
   };
+}
+
+/** Where a player stands on a goal, as the always-on chip reads it. */
+export interface GoalStanding {
+  /** "한 컨테이너 조합 4/6". */
+  readonly label: string;
+  readonly met: boolean;
+}
+
+/**
+ * Progress towards a goal, in the words the chip shows.
+ *
+ * It lives here rather than in the component that draws it. The chip used to
+ * restate all six conditions in a switch of its own, thresholds and all, and
+ * when the six were retuned every chip went on quoting the old ones: Collector
+ * read `7/7` and called itself met while the rule asked for nine. A player
+ * steers by this on every decision, so it has to be the rule speaking.
+ */
+export function goalStanding(goal: Goal, playArea: readonly Card[]): GoalStanding {
+  const definition = judge(goal.id);
+  if (!definition) return { label: '', met: false };
+
+  const check = goalCheck(playArea);
+  const done = Math.min(definition.done(check), definition.steps);
+  // A goal that reached here from an older server has no `unit`; the rule's own
+  // copy is right there, and printing `undefined` at a player never is.
+  const unit = goal.unit ?? definition.unit;
+  return { label: `${unit} ${done}/${definition.steps}`, met: definition.met(check) };
 }

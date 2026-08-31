@@ -78,7 +78,7 @@ test('every goal can be met', () => {
 
 test('a goal nobody can judge is an error, not a zero', () => {
   assert.throws(
-    () => goalScore({ playArea: [], goal: { id: 'nonesuch' as GoalId, name: '?', text: '?', score: 99 } }),
+    () => goalScore({ playArea: [], goal: { id: 'nonesuch' as GoalId, name: '?', text: '?', score: 99, unit: '?' } }),
     /판정할 수 없는 목표/,
   );
 });

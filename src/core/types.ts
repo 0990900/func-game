@@ -30,6 +30,16 @@ export interface Goal {
   readonly name: string;
   readonly text: string;
   readonly score: number;
+  /**
+   * What the always-on progress chip counts, in a word or two — so it can read
+   * "한 컨테이너 조합 4/6".
+   *
+   * It lives beside the rule rather than in the component that draws it. The
+   * chip used to restate all six conditions in its own switch, and when the six
+   * were retuned every chip went on quoting the old thresholds: Collector read
+   * 7/7 and called itself met while the rule was asking for nine.
+   */
+  readonly unit: string;
 }
 
 export type ComboFamily = 'base' | 'special';

@@ -10,11 +10,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { goalWorth, CARDS_PER_PLAYER } from '../src/core/rules.ts';
-import { judge, goalCheck, goals } from '../src/core/goals.ts';
+import { judge, goalCheck, goals, goalStanding } from '../src/core/goals.ts';
 import { createDeck } from '../src/core/cards.ts';
 import { Command } from '../src/core/commands.ts';
 import { createTable } from '../src/core/testing.ts';
 import { scoreUtilities } from '../src/core/scoring.ts';
+
 import type { Card, ContainerName } from '../src/core/types.ts';
 
 const deck = createDeck();
@@ -125,4 +126,30 @@ test('a bot dealt Utility Belt ends up with more utility kinds', () => {
     chasing > elsewhere,
     `Utility Belt를 받은 봇이 ${chasing.toFixed(2)}종, Purist를 받은 봇이 ${elsewhere.toFixed(2)}종 — 목표가 행동을 바꾸지 못했습니다`,
   );
+});
+
+test('the chip on screen counts what the rule counts', () => {
+  // The chip is read on every decision, so it steering by its own copy of the
+  // thresholds is worse than useless: after the six goals were retuned it went
+  // on saying Collector 7/7, met, while the rule was asking for nine. Whatever
+  // draws it must ask the rule, and this is what says so.
+  const playable = deck.filter((c) => c.kind !== 'order-reverse');
+  for (let seed = 1; seed <= 60; seed += 1) {
+    const playArea = shuffled(playable, seed).slice(0, 15);
+    const check = goalCheck(playArea);
+    for (const goal of goals) {
+      const definition = judge(goal.id)!;
+      const standing = goalStanding(goal, playArea);
+      assert.equal(
+        standing.met,
+        definition.met(check),
+        `${goal.id}: 칩은 ${standing.met ? '달성' : '미달성'}이라는데 규칙은 반대입니다`,
+      );
+      assert.equal(
+        standing.label,
+        `${goal.unit} ${Math.min(definition.done(check), definition.steps)}/${definition.steps}`,
+        `${goal.id}: 칩의 숫자가 규칙과 다릅니다 — ${standing.label}`,
+      );
+    }
+  }
 });
