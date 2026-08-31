@@ -10,7 +10,6 @@ import { createStore } from 'zustand/vanilla';
 import { useStore } from 'zustand';
 import type { PublicState } from '../../../src/core/types.ts';
 import { createRoom, joinRoom, resumeRoom } from '../net/connection.ts';
-import { isNarrow } from '../ui/viewport.ts';
 import { sound } from '../ui/sound.ts';
 import type { GameRoom, Handlers } from '../net/connection.ts';
 
@@ -35,9 +34,7 @@ export interface GameState {
    * screens, where the hand is fanned and most of each card is covered: the
    * first tap reveals, the second commits.
    */
-  previewCardId: string | null;
   /** The market card raised for a look. Same two-tap rule as the hand. */
-  previewMarketId: string | null;
   toasts: Toast[];
   myTurnAnnounced: boolean;
   /**
@@ -73,8 +70,6 @@ const initial: GameState = {
   state: null,
   selectedCardId: null,
   selectedMarketId: null,
-  previewCardId: null,
-  previewMarketId: null,
   toasts: [],
   myTurnAnnounced: false,
   showSignatures: false,
@@ -174,8 +169,6 @@ const handlers: Handlers = {
       clockOffset: serverNow - Date.now(),
       selectedCardId: null,
       selectedMarketId: null,
-      previewCardId: null,
-      previewMarketId: null,
       connection: 'connected',
       myTurnAnnounced: becameMyTurn,
     });
@@ -258,39 +251,28 @@ export const actions = {
   kickPlayer: (playerId: string) => send('kick_player', { playerId }),
   chooseGoal: (goalId: string) => send('choose_goal', { goalId }),
 
+  /**
+   * One tap chooses a card, on any screen.
+   *
+   * A phone used to need two: the cards are fanned, so most of one is covered
+   * and a first tap could only mean "let me look". Choosing already lifts a card
+   * clear of the fan, though, so the look was free all along — and hitting the
+   * same narrow strip twice is the part that was hard. Nothing is played by
+   * tapping; the button under the table is what commits.
+   */
   selectCard: (cardId: string) => {
     sound.play('select');
-    return set((s) => {
-      // Tapping the chosen card again puts it back.
-      if (s.selectedCardId === cardId) {
-        return {
-          selectedCardId: null, selectedMarketId: null,
-          previewCardId: null, previewMarketId: null,
-        };
-      }
-      // Wide screens show every card in full, so one tap is enough.
-      if (!isNarrow()) return { selectedCardId: cardId, previewCardId: null };
-      // Narrow: reveal first, commit on the second tap of the same card.
-      return s.previewCardId === cardId
-        ? { selectedCardId: cardId, previewCardId: null }
-        : {
-            previewCardId: cardId, selectedCardId: null,
-            selectedMarketId: null, previewMarketId: null,
-          };
-    });
+    // Tapping the chosen card again puts it back.
+    return set((s) => (s.selectedCardId === cardId
+      ? { selectedCardId: null, selectedMarketId: null }
+      : { selectedCardId: cardId }));
   },
 
   selectMarket: (cardId: string) => {
     sound.play('select');
-    return set((s) => {
-      if (s.selectedMarketId === cardId) return { selectedMarketId: null, previewMarketId: null };
-      if (!isNarrow()) return { selectedMarketId: cardId, previewMarketId: null };
-      // Narrow: the market is fanned too, so reveal first and commit on the
-      // second tap — the same rule as the hand, so there is one thing to learn.
-      return s.previewMarketId === cardId
-        ? { selectedMarketId: cardId, previewMarketId: null }
-        : { previewMarketId: cardId, selectedMarketId: null };
-    });
+    return set((s) => (s.selectedMarketId === cardId
+      ? { selectedMarketId: null }
+      : { selectedMarketId: cardId }));
   },
 
   /**
@@ -302,12 +284,10 @@ export const actions = {
    */
   setPick: (cardId: string, marketCardId: string | null) => set({
     selectedCardId: cardId, selectedMarketId: marketCardId,
-    previewCardId: null, previewMarketId: null,
   }),
 
   clearPick: () => set({
     selectedCardId: null, selectedMarketId: null,
-    previewCardId: null, previewMarketId: null,
   }),
 
   submitPick: () => {

@@ -29,22 +29,18 @@ import type { Card, PublicState } from '../../../src/core/types.ts';
  * The canvas cannot be read or focused, so every card on it is also a button
  * here — the market included, or a keyboard player could never make a swap.
  *
- * On a narrow screen a card takes two taps: the first previews it. That state
- * is announced rather than left silent, so a non-visual player can tell the
- * first press registered.
+ * One tap chooses; the button under the table plays it.
  */
 function CardButtons({
   label,
   cards,
   selectedId,
-  previewId,
   disabled,
   onSelect,
 }: {
   readonly label: string;
   readonly cards: readonly Card[];
   readonly selectedId: string | null;
-  readonly previewId: string | null;
   readonly disabled: boolean;
   readonly onSelect: (cardId: string) => void;
 }) {
@@ -55,7 +51,6 @@ function CardButtons({
       <h3 className="visually-hidden">{label}</h3>
       {cards.map((card) => {
         const chosen = card.id === selectedId;
-        const previewed = card.id === previewId;
         return (
           <button
             key={card.id}
@@ -65,7 +60,6 @@ function CardButtons({
             aria-pressed={chosen}
             aria-label={
               `${card.label} · ${cardBack(card).signature}`
-              + `${previewed ? ' · 미리보기 중, 다시 누르면 선택' : ''}`
               + `${chosen ? ' · 선택됨' : ''}`
             }
             onClick={() => onSelect(card.id)}
@@ -80,9 +74,7 @@ function CardButtons({
 
 function TableFallback({ state }: { readonly state: PublicState }) {
   const selectedCardId = useGame((s) => s.selectedCardId);
-  const previewCardId = useGame((s) => s.previewCardId);
   const selectedMarketId = useGame((s) => s.selectedMarketId);
-  const previewMarketId = useGame((s) => s.previewMarketId);
   const myTurn = Boolean(state.me?.isMyTurn);
 
   return (
@@ -91,7 +83,6 @@ function TableFallback({ state }: { readonly state: PublicState }) {
         label="뽑은 카드 (키보드 선택)"
         cards={state.drawn ? [state.drawn] : []}
         selectedId={selectedCardId}
-        previewId={previewCardId}
         disabled={!myTurn}
         onSelect={actions.selectCard}
       />
@@ -99,7 +90,6 @@ function TableFallback({ state }: { readonly state: PublicState }) {
         label="시장 (뽑은 카드를 고른 뒤 교환할 카드 선택)"
         cards={state.market}
         selectedId={selectedMarketId}
-        previewId={previewMarketId}
         disabled={!myTurn || !selectedCardId}
         onSelect={actions.selectMarket}
       />

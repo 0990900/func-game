@@ -190,8 +190,6 @@ export interface TableInput {
   readonly selectedCardId: string | null;
   readonly selectedMarketId: string | null;
   /** Raised for a look, not yet chosen. Narrow screens only. */
-  readonly previewCardId: string | null;
-  readonly previewMarketId: string | null;
   /** Study mode: the top row shows each card's type instead of its face. */
   readonly showSignatures: boolean;
   /** Draw the other players' boards as well as mine. */
@@ -397,7 +395,7 @@ export class TableScene {
   update(input: TableInput): number {
     this.lastInput = input;
     const {
-      state, selectedCardId, selectedMarketId, previewCardId, previewMarketId,
+      state, selectedCardId, selectedMarketId,
       showSignatures, showOpponents,
     } = input;
     // Sprites bake their size, so a resize that changes card geometry has to
@@ -484,21 +482,18 @@ export class TableScene {
       // are only true while the row is the player's to act on.
       keyHints: myTurn,
       selectedIds: new Set([selectedCardId, selectedMarketId].filter((id): id is string => Boolean(id))),
-      raisedIds: new Set([previewCardId, previewMarketId].filter((id): id is string => Boolean(id))),
       // Five cards rarely fit side by side, so they overlap and spread to fill —
       // except while their backs are showing, when every one has to be legible.
       fan: !studying,
     });
 
-    // What the player is looking at right now. A preview counts — on a phone the
-    // first tap only reads a card, and that is exactly when the guide is wanted.
-    // Both sides show at once during a swap: that choice is a comparison, and
-    // one guide cannot answer it.
+    // What the player is looking at right now. Both sides show at once during a
+    // swap: that choice is a comparison, and one guide cannot answer it.
     const find = (id: string | null): Card | null =>
       (id ? rowCards.find((entry) => entry.card.id === id)?.card ?? null : null);
     const focus: GuideFocus[] = [
-      { role: '뽑은 카드', card: find(previewCardId ?? selectedCardId) },
-      { role: '시장', card: find(previewMarketId ?? selectedMarketId) },
+      { role: '뽑은 카드', card: find(selectedCardId) },
+      { role: '시장', card: find(selectedMarketId) },
     ].filter((entry): entry is GuideFocus => entry.card !== null);
     y = this.layoutSelectionGuide(state, focus, y + GAP, PAD, cardsWidth);
 

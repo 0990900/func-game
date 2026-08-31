@@ -72,11 +72,11 @@ export function TableCanvas() {
 
       const draw = (): void => {
         const {
-          state, selectedCardId, selectedMarketId, previewCardId, previewMarketId, showSignatures, showOpponents,
+          state, selectedCardId, selectedMarketId, showSignatures, showOpponents,
         } = gameStore.getState();
         if (!state || !scene || !app) return;
         const content = scene.update({
-          state, selectedCardId, selectedMarketId, previewCardId, previewMarketId, showSignatures, showOpponents,
+          state, selectedCardId, selectedMarketId, showSignatures, showOpponents,
         });
         // The canvas fills its grid row; the scene scrolls inside it when the
         // content is taller, so the page itself never grows.
@@ -89,7 +89,7 @@ export function TableCanvas() {
         // needs no scroll at all — the cards being chosen between are already
         // on screen. Letting go of a choice still returns to the top, which is
         // a no-op on any screen tall enough to hold the table.
-        const choice = selectedCardId ?? previewCardId;
+        const choice = selectedCardId;
         if (!choice && lastChoice) scene.scrollToTop();
         lastChoice = choice;
       };
