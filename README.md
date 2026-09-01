@@ -4,6 +4,9 @@
 
 ## 실행
 
+**Node 22.6 이상**이 필요합니다. 서버와 규칙 코어를 TypeScript로 두고 Node의 타입 스트리핑으로 바로
+실행하기 때문입니다.
+
 ```bash
 npm install
 npm run build

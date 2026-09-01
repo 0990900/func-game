@@ -3,11 +3,14 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": ">=22.6"
+  },
   "scripts": {
-    "start": "node src/server/colyseus.ts",
-    "dev": "node --watch src/server/colyseus.ts",
+    "start": "node --experimental-strip-types src/server/colyseus.ts",
+    "dev": "node --experimental-strip-types --watch src/server/colyseus.ts",
     "build": "npm --prefix client ci --no-audit --fund=false && npm --prefix client run build",
-    "test": "node --test \"test/*.test.ts\"",
+    "test": "node --experimental-strip-types --test \"test/*.test.ts\"",
     "typecheck": "tsc --noEmit && npm --prefix client run typecheck"
   },
   "dependencies": {
