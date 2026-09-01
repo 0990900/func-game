@@ -57,8 +57,21 @@ const MARKET_OVERLAP = 0.52;
 const MARKET_MIN_STEP = 30;
 /** Number keys for the top row, in the order the cards are drawn. */
 const KEY_HINTS = ['1', '2', '3', '4', '5'];
-/** How far a chosen card lifts clear of the ones it overlaps. */
-const FAN_LIFT = 16;
+/**
+ * How far a chosen card lifts clear of the ones it overlaps.
+ *
+ * The lift is the only thing that shows a covered card at all: the chosen one
+ * is drawn full width over its neighbours, so whatever it does not cover is
+ * whatever it has risen above. At 16px that was the index number and nothing
+ * else — four cards reduced to the digits 2 3 4 5, with the body of the card
+ * you were looking at belonging to a different card if you tapped it.
+ *
+ * Half the card height clears the name of everything behind it, which is what a
+ * player is choosing between. The row reserves the same amount above itself, so
+ * a lifted card never climbs over the heading.
+ */
+const FAN_LIFT_RATIO = 0.5;
+const fanLift = (cardHeight: number): number => Math.round(cardHeight * FAN_LIFT_RATIO);
 /** The guide answers one question, so it stays short enough to read at a glance. */
 const GUIDE_MAX_ROWS = 6;
 const GUIDE_COLUMNS = 2;
@@ -602,8 +615,8 @@ export class TableScene {
 
     // Room for the lift above the cards as well as below: a raised card used to
     // rise over the row's own heading and cover it.
-    const top = y + ROW_LABEL + (fan ? FAN_LIFT : 0);
     const cardHeight = metricsFor(width).height;
+    const top = y + ROW_LABEL + (fan ? fanLift(cardHeight) : 0);
     const cardWidth = this.cardWidth(width);
     // Each card says how far the next one sits, so one row can hold a card that
     // stands alone and a group that overlaps. Anything that does not say falls
@@ -648,7 +661,7 @@ export class TableScene {
       const offset = row === 0 ? positions[index]! : column * step;
       // A raised card lifts clear of its neighbours — further when fanned,
       // where the lift is what separates it from the cards it overlaps.
-      const lift = raised ? (fan ? FAN_LIFT : 5) : 0;
+      const lift = raised ? (fan ? fanLift(cardHeight) : 5) : 0;
       const target: Point = {
         x: left + offset,
         y: top + row * (cardHeight + GAP) - lift,

@@ -16,44 +16,35 @@ UI에서는 다음 용어를 사용한다.
 
 `Workbench`는 사용하지 않는다. **`손패`도 사용하지 않는다** — 손패는 없어졌고 차례가 되면 덱에서 한 장을 뽑는다.
 
-## 두 스택이 공존한다
-
-마이그레이션이 진행 중이라 **신규 스택과 레거시 스택이 같이 있다.** 새 작업은 전부 신규 스택에서 한다.
-
-| | 신규 (작업 대상) | 레거시 (컷오버까지 유지) |
-|---|---|---|
-| 규칙 코어 | `src/core/` — TypeScript + Effect | `src/game/` — JS + fun-fp-js |
-| 서버 | `src/server/colyseus.ts`, `draft-room.ts` — Colyseus, 2567 | `src/server/server.js` — 커스텀 ws, 3107 |
-| 클라이언트 | `client/` — React + PixiJS + zustand, Vite | `public/` — 바닐라 DOM |
-
-두 코어는 **규칙이 이미 갈라졌다.** 레거시는 옛 손패 규칙과 수동 Claim(`pendingClaim`)을 그대로 돌린다. 규칙 변경은 `src/core/`에만 반영한다.
-
-**`npm test`의 녹색은 신규 코어의 증거가 아니다.** 레거시 테스트는 이미 제거된 동작(턴을 멈추는 Claim 선택 등)을 여전히 통과시킨다. 신규 동작을 확인할 때는 반드시 `npm run test:core`를 본다. 레거시 스위트는 컷오버(마일스톤 G)에서 `src/game/`, `public/`과 함께 삭제한다.
-
 ## 작업 시작 절차
 
 ```bash
 npm install
-npm run test:core         # 신규 코어·서버 (test/*.test.ts) — 실제 검증 대상
-npm run test:legacy       # 레거시 (test/*.test.js) — 컷오버까지 유지되는 카나리아
-npm test                  # 둘 다
-npm run typecheck         # 서버·코어
-npm run start:colyseus    # 신규 서버 (2567)
-cd client && npm run dev  # Vite 개발 서버
+npm run build              # 화면을 빌드한다. 서버가 이걸 서빙한다
+npm start                  # 게임 서버 + 화면, 2567
+
+npm test                   # 규칙·서버 테스트 (test/*.test.ts)
+npm run typecheck          # 서버·코어·클라이언트
+
+cd client && npm run dev   # 화면만 따로. 저장하면 바로 반영된다
 ```
 
-- 클라이언트가 `import.meta.env.DEV`일 때 2567로 붙는다.
-- 서버 바인딩: `0.0.0.0`
-- 레거시는 `npm start` (3107). 사용자가 직접 띄워둔 경우가 있으니 **함부로 종료하지 않는다.**
-- 외부 기기에서는 서버 머신의 LAN 주소나 Tailscale 주소로 접근한다.
+- **`npm start` 하나로 게임이 뜬다.** 서버가 `client/dist`를 직접 서빙하므로 주소가 하나다.
+  빌드가 없으면 서버가 경고를 찍고 게임 진행만 맡는다.
+- 화면을 고치는 중에는 `cd client && npm run dev`가 낫다. 저장하면 바로 반영된다.
+  이때 화면은 Vite 포트에, 게임 서버는 2567에 따로 뜨고 클라이언트가 알아서 2567로 붙는다.
+- 서버 바인딩은 `0.0.0.0`이다. 다른 기기에서는 LAN 주소나 Tailscale 주소로 접근한다.
+  Vite로 띄울 때는 `npm run dev -- --host`가 있어야 다른 기기에서 열린다.
 - 현재 저장소에는 Git remote가 없을 수 있다. push나 PR을 전제로 작업하지 말고 `git remote -v`로 먼저 확인한다.
 
-변경 전후에 반드시 `npm test`를 실행한다. 모바일 UI를 수정하면 최소 375×812 뷰포트에서 `document.documentElement.scrollWidth === window.innerWidth`인지 확인한다.
+변경 전후에 반드시 `npm test`를 실행한다. 모바일 UI를 수정하면 최소 375×812 뷰포트에서
+`document.documentElement.scrollWidth === window.innerWidth`인지 확인한다. **화면을 고쳤으면 여러 폭에서
+직접 스크린샷을 찍어 눈으로 본다** — 특히 배치가 갈리는 경계 폭에서.
 
 ## 디렉터리 구조
 
 ```text
-src/core/            신규 규칙 코어 (TypeScript + Effect)
+src/core/            규칙 코어 (TypeScript + Effect)
   cards.ts           덱 정의. 컨테이너별 연산은 specs 한 곳에서 나온다
   combos.ts          조합 정의·판정·Claim 가능 여부
   scoring.ts         조합/Utility/Claim 점수
@@ -64,7 +55,7 @@ src/core/            신규 규칙 코어 (TypeScript + Effect)
   services.ts        Rng / IdGen / Clock (주입 가능)
   testing.ts         결정적 테이블 harness
 src/server/
-  colyseus.ts        신규 엔트리 (2567)
+  colyseus.ts        엔트리 (2567). 게임 중개 + client/dist 서빙
   draft-room.ts      Colyseus Room. 봇과 사람의 턴 타이머를 하나로 관리
   game-runtime.ts    방별 명령 직렬화 (Semaphore(1))
 client/src/
@@ -74,8 +65,8 @@ client/src/
   components/        React 셸·Dock·시트·그래프·종료 화면
   theme/             색·기호·한글 힌트·타입 서명
   ui/                점수 시리즈, 결과 이미지, 뷰포트
-src/game/, public/   레거시. 컷오버까지 유지
-test/                node:test. *.test.ts는 신규, *.test.js는 레거시
+client/dist/         빌드 결과. 서버가 이걸 서빙한다
+test/                node:test
 ```
 
 ## 아키텍처
@@ -83,32 +74,34 @@ test/                node:test. *.test.ts는 신규, *.test.js는 레거시
 명령 처리 흐름은 다음과 같다.
 
 ```text
-브라우저 WebSocket 메시지
-  -> Free.api로 선언된 Game 명령
-  -> 방별 Actor.send(program)
-  -> gameInterpreter
-  -> State<Room, Result>
+브라우저 WebSocket 메시지 (Colyseus)
+  -> DraftRoom.onMessage
+  -> GameRuntime (방마다 Semaphore(1)로 직렬화)
+  -> Effect 명령 실행기 (src/core/commands.ts)
+  -> structuredClone 한 방에 규칙 적용
   -> 새 방 상태
   -> viewer별 publicState
-  -> WebSocket broadcast
+  -> Colyseus broadcast
 ```
 
 역할을 섞지 않는다.
 
-- `Free`: 무엇을 실행할지 표현하는 게임 명령 DSL
-- `State`: 원본 방을 보존하는 상태 전이
-- `Actor`: 같은 방으로 들어온 명령의 순차 실행
+- `GameCommand`: 무엇을 실행할지 표현하는 명령 어휘 (`src/core/commands.ts`)
+- `transition`: 방을 복제한 뒤 규칙을 적용하는 상태 전이. 실패한 명령은 원본을 건드리지 않는다
+- `GameRuntime`: 같은 방으로 들어온 명령의 순차 실행. Colyseus는 async 핸들러의 await 사이를
+  직렬화해주지 않으므로 이 계층이 반드시 필요하다
 - `publicState`: 비밀 목표와 목표 후보를 시청자별로 가리는 투영 경계
-- `public/`: 서버가 보낸 상태를 표현하고 사용자 명령만 전송
+- `client/`: 서버가 보낸 상태를 표현하고 사용자 명령만 전송
 
-`src/game/program.js`의 State interpreter는 `structuredClone(room)`으로 복제한 뒤 기존 규칙 함수를 적용한다. 따라서 Actor가 가진 이전 방 객체는 실패한 명령으로 변경되지 않는다. 기존 규칙 함수는 내부적으로 복제본을 변경하므로, 이를 완전한 불변 구현이라고 오해하지 않는다.
+**방 상태에는 데이터만 담는다.** 매 명령마다 `structuredClone`으로 복제하는데 함수는 복제되지 않는다.
+목표 판정 함수가 방에 들어가면 그 자리에서 깨진다 — 판정은 id로 다시 찾는다.
 
 새로운 상태 변경 명령을 추가할 때는 다음 순서를 따른다.
 
-1. `src/game/game.js`에 규칙과 검증을 구현한다.
-2. `src/game/program.js`의 `Game` 어휘와 interpreter handler를 함께 추가한다.
-3. 서버는 규칙 함수를 직접 호출하지 않고 `sendToActor(actor, Game.command(...))`를 사용한다.
-4. 성공, 잘못된 턴, 실패 후 Actor 큐 복구를 테스트한다.
+1. `src/core/rules.ts`에 규칙과 검증을 구현한다.
+2. `src/core/commands.ts`의 `GameCommand` 어휘와 실행기 handler를 함께 추가한다.
+3. 서버는 규칙 함수를 직접 호출하지 않고 `runtime.tryRun(Command.…)`을 쓴다.
+4. 성공, 잘못된 턴, 실패 후 다음 명령 처리를 테스트한다.
 
 ## WebSocket 명령
 
@@ -186,8 +179,7 @@ Collector가 100%, Polyglot이 3%가 됐고, 목표 두 장 중 하나를 고르
 
 ## 카드와 점수
 
-신규 코어의 덱은 81장이다(`src/core/cards.ts`). 레거시 `src/game/cards.js`는 옛 구성 그대로 66장이며
-`test/deck.test.js`가 그쪽을 검증한다.
+덱은 81장이다(`src/core/cards.ts`).
 
 **컨테이너는 그 타입이 실제로 가진 연산만 갖는다.** 빠진 자리는 실수가 아니라 가르칠 내용이다.
 
@@ -275,8 +267,7 @@ Utility 카드는 덱에 12장, 전부 다른 것으로 한 장씩 들어 있다
 
 ## 조커 배정
 
-신규 코어에서 조커 소비와 조합 판정은 `src/core/combos.ts`의 `allocateCoverage`가 유일한 기준이다.
-레거시 `src/game/combos.js`는 옛 규칙을 그대로 돌리므로 대조하지 않는다.
+조커 소비와 조합 판정은 `src/core/combos.ts`의 `allocateCoverage`가 유일한 기준이다.
 
 - **조커 한 장은 연산 하나를 맡는다.** 그 자리는 진짜 카드와 똑같이 동작해서, `ap`으로 배정된 조커는
   Apply·Applicative·Monad를 함께 지원한다. 대신 여기서는 `chain`, 저기서는 `traverse`가 될 수는 없다.
@@ -304,17 +295,18 @@ Utility 카드는 덱에 12장, 전부 다른 것으로 한 장씩 들어 있다
 
 이 규칙을 지키는 테스트는 `test/core-wildcards.test.ts`에 있다.
 
-## fun-fp-js 사용 원칙
+## 함수형 추상화 사용 원칙
 
-현재 `fun-fp-js@0.2.2`를 정확한 버전으로 고정한다.
+규칙 코어는 Effect(effect-ts)를 쓴다. 그 전에는 `fun-fp-js`(자작 라이브러리)를 도그푸딩했고, 컷오버에서
+레거시 스택과 함께 걷어냈다.
 
-- `pipe`, `curry`: 점수 계산
-- `Maybe`: viewer 조회와 공개 상태 투영
-- `Free.api`: 게임 명령과 실행 분리
-- `State`: 방 상태 전이
-- `Actor`: 방별 명령 직렬화
+- `Effect` + `Data.TaggedError`: 명령 실행과 규칙 위반. 에러 메시지는 한국어 그대로 사용자에게 간다
+- `Effect.makeSemaphore(1)`: 방별 명령 직렬화
+- 셔플·id·시계는 주입 가능한 서비스로 분리한다. 테스트가 결정적이어야 하기 때문이다
 
-함수형 추상화를 모든 코드에 강제로 적용하지 않는다. DOM 렌더링, HTTP 파일 제공, WebSocket 연결 수명주기처럼 부수효과가 핵심인 경계는 명시적인 코드로 유지한다. `Either` 등 새 추상화를 도입할 때는 실제 실패 모델과 테스트 이점이 있을 때만 사용한다.
+함수형 추상화를 모든 코드에 강제로 적용하지 않는다. 캔버스 렌더링, 정적 파일 제공, WebSocket 연결
+수명주기처럼 부수효과가 핵심인 경계는 명시적인 코드로 유지한다. 새 추상화는 실제 실패 모델과 테스트
+이점이 있을 때만 도입한다.
 
 ## UI 원칙
 
@@ -337,12 +329,17 @@ git diff --check
 변경 유형별 최소 검증은 다음과 같다.
 
 - 규칙 변경: 정상 경로와 잘못된 턴/상태를 단위 테스트
-- Free/State 변경: 원본 상태 보존과 interpreter 결과 테스트
-- Actor 변경: 동시 명령 순서, 실패 후 다음 명령 처리 테스트
+- 명령 실행기 변경: 원본 상태 보존과 실행 결과 테스트
+- 직렬화 계층 변경: 동시 명령 순서, 실패 후 다음 명령 처리 테스트
 - 공개 상태 변경: 비밀 목표와 목표 후보가 다른 시청자의 직렬화 결과에 없는지 테스트
 - 봇 변경: 한 명령이 한 턴만 실행하고 오래된 예약 명령을 거부하는지 테스트
-- 반응형 UI 변경: 375×812와 데스크톱에서 확인하고 브라우저 콘솔 오류 검사
-- 서버 변경: `http://127.0.0.1:3107` HTTP 200과 `ws://127.0.0.1:3107/ws` 연결 확인
+- 점수·목표 변경: 조합 완성률과 **여섯 목표의 달성률을 함께 잰다.** 한쪽 숫자를 바꾸면 다른 쪽이 따라
+  움직인다 — 유틸리티 곡선을 올렸더니 Utility Belt 달성률이 51%에서 81%로 뛰었다
+- 화면 변경: **여러 폭에서 직접 스크린샷을 찍어 눈으로 본다.** 375·414·768·1280·1920만으로는 부족하다.
+  배치가 갈리는 경계 폭을 계산해서 그 양쪽을 본다 — 격자 열을 하나 늘렸더니 두 칸 배치의 기준이
+  1438에서 1514픽셀로 올라가 그 사이 노트북이 전부 한 줄로 쌓였는데, 위 다섯 폭은 그 구간을 건너뛴다
+- 화면 변경: 375×812에서 `document.documentElement.scrollWidth === window.innerWidth` 확인, 콘솔 오류 검사
+- 서버 변경: `http://127.0.0.1:2567` HTTP 200과 방 목록(`/rooms`) 응답 확인
 
 테스트 개수는 바뀔 수 있으므로 고정된 숫자를 문서의 성공 조건으로 사용하지 않는다. 실패한 테스트를 삭제하거나 완화해 통과시키지 않는다.
 
